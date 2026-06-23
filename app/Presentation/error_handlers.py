@@ -32,6 +32,7 @@ from app.Domain.exceptions import (
     DomaineError,
     EtudiantIntrouvableError,
     EtudiantDejaExistantError,
+    EtudiantSuppressionImpossibleError,
     PaiementIntrouvableError,
     PaiementExcessifError,
     PaiementDejaEffectueError,
@@ -41,6 +42,10 @@ from app.Domain.exceptions import (
     FichierExcelInvalideError,
     ImportExcelError,
     MontantNegatifError,
+    UtilisateurDejaExistantError,
+    UtilisateurIntrouvableError,
+    IdentifiantsInvalidesError,
+    CompteDesactiveError,
 )
 
 
@@ -107,6 +112,29 @@ def enregistrer_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return _reponse_erreur(404, "SPECIALITE_INTROUVABLE", str(exc))
 
+    @app.exception_handler(UtilisateurIntrouvableError)
+    async def handler_utilisateur_introuvable(
+        request: Request,
+        exc: UtilisateurIntrouvableError
+    ) -> JSONResponse:
+        return _reponse_erreur(404, "UTILISATEUR_INTROUVABLE", str(exc))
+
+    # ── 401 : Authentification ───────────────────────────────
+
+    @app.exception_handler(IdentifiantsInvalidesError)
+    async def handler_identifiants_invalides(
+        request: Request,
+        exc: IdentifiantsInvalidesError
+    ) -> JSONResponse:
+        return _reponse_erreur(401, "IDENTIFIANTS_INVALIDES", str(exc))
+
+    @app.exception_handler(CompteDesactiveError)
+    async def handler_compte_desactive(
+        request: Request,
+        exc: CompteDesactiveError
+    ) -> JSONResponse:
+        return _reponse_erreur(401, "COMPTE_DESACTIVE", str(exc))
+
     # ── 409 : Conflit (doublon) ──────────────────────────────
     # Levée quand on essaie de créer quelque chose qui existe déjà.
 
@@ -123,6 +151,20 @@ def enregistrer_handlers(app: FastAPI) -> None:
         exc: PaiementDejaEffectueError
     ) -> JSONResponse:
         return _reponse_erreur(409, "PAIEMENT_DEJA_EFFECTUE", str(exc))
+
+    @app.exception_handler(EtudiantSuppressionImpossibleError)
+    async def handler_etudiant_suppression_impossible(
+        request: Request,
+        exc: EtudiantSuppressionImpossibleError
+    ) -> JSONResponse:
+        return _reponse_erreur(409, "ETUDIANT_SUPPRESSION_IMPOSSIBLE", str(exc))
+
+    @app.exception_handler(UtilisateurDejaExistantError)
+    async def handler_utilisateur_existant(
+        request: Request,
+        exc: UtilisateurDejaExistantError
+    ) -> JSONResponse:
+        return _reponse_erreur(409, "UTILISATEUR_DEJA_EXISTANT", str(exc))
 
     # ── 400 : Données invalides ──────────────────────────────
     # Levée quand les données envoyées violent une règle métier.

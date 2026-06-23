@@ -7,7 +7,7 @@ from typing import List, Optional
 from app.Domain.value_objects import (
     Matricule, Montant, Email, Telephone,
     Sexe, LienParent, StatutPaiement, StatutQRCode,
-    TypeNotification, Niveau
+    TypeNotification, Niveau, RoleUtilisateur
 )
 from app.Domain.exceptions import (
     PaiementExcessifError, PaiementDejaEffectueError,
@@ -220,3 +220,24 @@ class NotificationDomaine:
             f"sur {montant_attendu} attendus. "
             f"Reste : {reste}. Paiement effectué le {date_paiement}."
         )
+
+
+@dataclass
+class UtilisateurDomaine:
+    """
+    Compte utilisateur du système (authentification).
+
+    RÈGLE MÉTIER : seul un compte ACTIF peut se connecter.
+    Le mot de passe n'est JAMAIS stocké en clair — uniquement son hash.
+    """
+    id_utilisateur: str
+    email: str
+    nom: str
+    mot_de_passe_hash: str
+    role: RoleUtilisateur
+    actif: bool = True
+    created_at: Optional[str] = None
+
+    def a_le_role(self, *roles: RoleUtilisateur) -> bool:
+        """Vérifie si l'utilisateur a un des rôles donnés."""
+        return self.role in roles

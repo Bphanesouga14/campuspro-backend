@@ -143,12 +143,14 @@ class ImporterExcelUseCase:
         paiement_repo:   IPaiementRepository,
         qr_repo:         IQRCodeRepository,
         notif_repo:      INotificationRepository,
+        calendrier_repo = None,
     ):
         self._specialite_repo = specialite_repo
         self._etudiant_repo   = etudiant_repo
         self._paiement_repo   = paiement_repo
         self._qr_repo         = qr_repo
         self._notif_repo      = notif_repo
+        self._calendrier_repo = calendrier_repo
 
     async def executer(
         self,
@@ -186,6 +188,7 @@ class ImporterExcelUseCase:
         resultats.append(await self._importer_paiements(classeur))
         resultats.append(await self._importer_qr_codes(classeur))
         resultats.append(await self._importer_notifications(classeur))
+        resultats.append(await self._importer_calendrier(classeur))
 
         # Compter le total et les erreurs
         total         = sum(r.inseres + r.mis_a_jour for r in resultats)
@@ -435,5 +438,61 @@ class ImporterExcelUseCase:
             except Exception as erreur:
                 resultat.erreurs += 1
                 resultat.details.append(f"Ligne {ligne[0]} : {erreur}")
+
+        return resultat
+
+    async def _importer_calendrier(self, classeur) -> ResultatFeuilleDTO:
+        """
+        Lit la feuille 'Calendrier_Niveaux' et insère/met à jour en base.
+
+        Colonnes attendues (à partir de la ligne 3) :
+        A=niveau, B=groupe, C=demarrage_academique, D=tranche_1_limite,
+        E=tranche_2_limite, F=tranche_3_limite, G=condition_demarrage,
+        H=mois_debut, I=mois_fin
+        """
+        NOM_FEUILLE = "Calendrier_Niveaux"
+        resultat = ResultatFeuilleDTO(
+            feuille=NOM_FEUILLE, inseres=0, mis_a_jour=0, erreurs=0
+        )
+
+        if self._calendrier_repo is None:
+            resultat.details.append(
+                "Calendrier_repo non configuré — feuille ignorée."
+            )
+            return resultat
+
+        if NOM_FEUILLE not in classeur.sheetnames:
+            resultat.details.append(f"Feuille '{NOM_FEUILLE}' absente.")
+            return resultat
+
+        feuille = classeur[NOM_FEUILLE]
+
+        for ligne in feuille.iter_rows(min_row=3, values_only=True):
+            niveau = _int(ligne[0])
+            if not niveau:
+                continue
+            try:
+                existant = await self._calendrier_repo.trouver_par_niveau(niveau)
+
+                await self._calendrier_repo.sauvegarder(
+                    niveau                = niveau,
+                    groupe                = _str(ligne[1]),
+                    demarrage_academique  = _str(ligne[2]),
+                    tranche_1_limite      = _str(ligne[3]),
+                    tranche_2_limite      = _str(ligne[4]),
+                    tranche_3_limite      = _str(ligne[5]),
+                    condition_demarrage   = _str(ligne[6]),
+                    mois_debut            = _str(ligne[7]),
+                    mois_fin              = _str(ligne[8]),
+                )
+
+                if existant:
+                    resultat.mis_a_jour += 1
+                else:
+                    resultat.inseres += 1
+
+            except Exception as erreur:
+                resultat.erreurs += 1
+                resultat.details.append(f"Ligne niveau={ligne[0]} : {erreur}")
 
         return resultat

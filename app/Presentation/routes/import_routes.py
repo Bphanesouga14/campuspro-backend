@@ -23,6 +23,9 @@ from app.Application.use_cases.import_use_cases import ImporterExcelUseCase
 from app.Application.DTOs.schemas import ImportExcelReponseDTO
 from app.Domain.exceptions import FichierExcelInvalideError, ImportExcelError
 from app.Presentation.dependencies import get_importer_excel_uc
+from app.Presentation.security import require_roles
+from app.Domain.entities import UtilisateurDomaine
+from app.Domain.value_objects import RoleUtilisateur
 
 
 router = APIRouter(tags=["Import Excel"])
@@ -76,6 +79,9 @@ async def importer_excel(
         description="Fichier GestionScolaire_SIGC.xlsx"
     ),
     use_case: ImporterExcelUseCase = Depends(get_importer_excel_uc),
+    _utilisateur: UtilisateurDomaine = Depends(
+        require_roles(RoleUtilisateur.ADMIN, RoleUtilisateur.SECRETAIRE)
+    ),
 ):
     """
     Reçoit le fichier Excel, lit son contenu en bytes,

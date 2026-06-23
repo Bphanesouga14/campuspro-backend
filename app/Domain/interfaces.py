@@ -39,6 +39,7 @@ from app.Domain.entities import (
     SpecialiteDomaine,
     QRCodeDomaine,
     NotificationDomaine,
+    UtilisateurDomaine,
 )
 
 
@@ -86,10 +87,13 @@ class IEtudiantRepository(ABC):
         niveau: Optional[int] = None,
         id_specialite: Optional[str] = None,
         annee_academique: Optional[str] = None,
+        skip: int = 0,
+        limit: Optional[int] = None,
     ) -> List[EtudiantDomaine]:
         """
         Liste les étudiants avec des filtres optionnels.
         Si aucun filtre → retourne tous les étudiants.
+        skip/limit permettent la pagination (limit=None → pas de limite).
         """
         ...
 
@@ -278,4 +282,29 @@ class IQRCodeService(ABC):
         Génère un QR code à partir des données fournies.
         Retourne le chemin vers l'image générée (ou base64).
         """
+        ...
+
+
+# ============================================================
+#  INTERFACE : IUtilisateurRepository
+# ============================================================
+class IUtilisateurRepository(ABC):
+    """Contrat pour la gestion des comptes utilisateurs (authentification)."""
+
+    @abstractmethod
+    async def sauvegarder(self, utilisateur: UtilisateurDomaine) -> UtilisateurDomaine:
+        """Crée ou met à jour un utilisateur."""
+        ...
+
+    @abstractmethod
+    async def trouver_par_id(self, id_utilisateur: str) -> Optional[UtilisateurDomaine]:
+        ...
+
+    @abstractmethod
+    async def trouver_par_email(self, email: str) -> Optional[UtilisateurDomaine]:
+        """Utilisé pour la connexion (login) et pour vérifier les doublons."""
+        ...
+
+    @abstractmethod
+    async def lister_tous(self) -> List[UtilisateurDomaine]:
         ...

@@ -17,6 +17,7 @@ import json          # Pour convertir un dictionnaire en texte JSON
 import base64        # Pour encoder l'image QR en texte (base64)
 import smtplib       # Bibliothèque Python standard pour envoyer des emails
 import io            # Pour créer un "fichier en mémoire" (sans écrire sur disque)
+import asyncio        # Pour exécuter le code bloquant (SMTP/HTTP) hors de l'event loop
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -151,38 +152,47 @@ class NotificationServiceImpl(INotificationService):
             return True  # On considère l'envoi comme réussi en dev
 
         try:
-            # ── Construire le message email ──────────────────
-            # MIMEMultipart = email avec plusieurs parties (texte + HTML possible)
-            email = MIMEMultipart("alternative")
-            email["Subject"] = sujet
-            email["From"]    = settings.SMTP_USER
-            email["To"]      = destinataire
-
-            # Partie texte brut (pour les clients mail qui ne supportent pas HTML)
-            partie_texte = MIMEText(message, "plain", "utf-8")
-            email.attach(partie_texte)
-
-            # ── Envoyer via SMTP ─────────────────────────────
-            # smtplib.SMTP_SSL = connexion sécurisée (port 465)
-            # smtplib.SMTP avec starttls = port 587
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as serveur:
-                # starttls() = démarre le chiffrement de la connexion
-                serveur.starttls()
-                # login() = authentification
-                serveur.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                # sendmail() = envoie l'email
-                serveur.sendmail(
-                    settings.SMTP_USER,
-                    destinataire,
-                    email.as_string()
-                )
-
-            return True  # Succès
-
+            return await asyncio.to_thread(
+                self._envoyer_email_sync, destinataire, sujet, message
+            )
         except smtplib.SMTPException as e:
             # En cas d'erreur SMTP → on affiche l'erreur mais on ne plante pas
             print(f"[ERREUR EMAIL] {e}")
             return False
+
+    @staticmethod
+    def _envoyer_email_sync(destinataire: str, sujet: str, message: str) -> bool:
+        """
+        Partie BLOQUANTE de l'envoi d'email (smtplib est synchrone).
+        Exécutée dans un thread séparé via asyncio.to_thread() pour ne
+        jamais bloquer la boucle d'événements asyncio de FastAPI.
+        """
+        # ── Construire le message email ──────────────────
+        # MIMEMultipart = email avec plusieurs parties (texte + HTML possible)
+        email = MIMEMultipart("alternative")
+        email["Subject"] = sujet
+        email["From"]    = settings.SMTP_USER
+        email["To"]      = destinataire
+
+        # Partie texte brut (pour les clients mail qui ne supportent pas HTML)
+        partie_texte = MIMEText(message, "plain", "utf-8")
+        email.attach(partie_texte)
+
+        # ── Envoyer via SMTP ─────────────────────────────
+        # smtplib.SMTP avec starttls = port 587
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as serveur:
+            # starttls() = démarre le chiffrement de la connexion
+            serveur.starttls()
+            # login() = authentification
+            serveur.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            # sendmail() = envoie l'email
+            serveur.sendmail(
+                settings.SMTP_USER,
+                destinataire,
+                email.as_string()
+            )
+
+        return True  # Succès
 
     async def envoyer_sms(
         self,
@@ -209,33 +219,40 @@ class NotificationServiceImpl(INotificationService):
             )
             return True
 
-        # ── Exemple avec Africa's Talking API ───────────────
-        # (à adapter selon votre opérateur SMS)
         try:
-            import urllib.request
-            import urllib.parse
-
-            # Préparer les données de la requête HTTP
-            parametres = urllib.parse.urlencode({
-                "username": settings.SMS_USERNAME,
-                "to":       numero,
-                "message":  message,
-                "from":     "SIGC",  # Identifiant expéditeur
-            }).encode("utf-8")
-
-            # Envoyer la requête HTTP POST à l'API SMS
-            requete = urllib.request.Request(
-                url     = "https://api.africastalking.com/version1/messaging",
-                data    = parametres,
-                headers = {
-                    "apiKey":       settings.SMS_API_KEY,
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Accept":       "application/json",
-                },
+            return await asyncio.to_thread(
+                self._envoyer_sms_sync, numero, message
             )
-            with urllib.request.urlopen(requete) as reponse:
-                return reponse.status == 200
-
         except Exception as e:
             print(f"[ERREUR SMS] {e}")
             return False
+
+    @staticmethod
+    def _envoyer_sms_sync(numero: str, message: str) -> bool:
+        """
+        Partie BLOQUANTE de l'envoi SMS (urllib est synchrone).
+        Exécutée dans un thread séparé via asyncio.to_thread().
+        """
+        import urllib.request
+        import urllib.parse
+
+        # Préparer les données de la requête HTTP
+        parametres = urllib.parse.urlencode({
+            "username": settings.SMS_USERNAME,
+            "to":       numero,
+            "message":  message,
+            "from":     "SIGC",  # Identifiant expéditeur
+        }).encode("utf-8")
+
+        # Envoyer la requête HTTP POST à l'API SMS
+        requete = urllib.request.Request(
+            url     = "https://api.africastalking.com/version1/messaging",
+            data    = parametres,
+            headers = {
+                "apiKey":       settings.SMS_API_KEY,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept":       "application/json",
+            },
+        )
+        with urllib.request.urlopen(requete, timeout=10) as reponse:
+            return reponse.status == 200

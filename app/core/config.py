@@ -1,7 +1,20 @@
+
+
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:supabase14.Com@db.biftryazdcxzvcwnqfcw.supabase.co:5432/lgs_db"
+    # Pas de valeur par défaut : DOIT être fourni via le fichier .env.
+    # Ne JAMAIS coder un identifiant de base de données en dur dans le code source.
+    DATABASE_URL: str  # Supabase (base principale)
+
+    # PostgreSQL local (base de secours si Supabase est inaccessible).
+    # Format : postgresql+asyncpg://user:password@localhost:5432/nom_base
+    # Optionnel : si absent, seul Supabase est utilisé.
+    LOCAL_DATABASE_URL: str = ""
+
+    # Ordre de priorité : "supabase" (défaut) ou "local"
+    DATABASE_PRIORITY: str = "supabase"
 
     APP_TITLE: str = "Logiciel de Gestion Scolaire"
     APP_VERSION: str = "1.0.0"
@@ -16,6 +29,14 @@ class Settings(BaseSettings):
     
     SMS_API_KEY: str = ""
     SMS_USERNAME: str = ""
+
+    # ── Authentification JWT ─────────────────────────────────
+    # JWT_SECRET_KEY : OBLIGATOIRE, doit être une chaîne longue et
+    # aléatoire (ex: générée avec `python -c "import secrets; print(secrets.token_hex(32))"`).
+    # Ne JAMAIS utiliser une valeur par défaut prévisible en production.
+    JWT_SECRET_KEY: str
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_MINUTES: int = 480  # 8 heures (une journée de travail)
 
        # ── Configuration Pydantic ───────────────────────────────
     # env_file=".env" → lit automatiquement le fichier .env

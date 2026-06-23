@@ -73,6 +73,12 @@ class LienParentEnum(str, enum.Enum):
     TUTEUR = "Tuteur"  # Un tuteur légal
 
 
+class RoleEnum(str, enum.Enum):
+    ADMIN      = "ADMIN"
+    SECRETAIRE = "SECRETAIRE"
+    CAISSIER   = "CAISSIER"
+
+
 # ============================================================
 #  MODÈLE 1 : Specialite
 #  Table PostgreSQL : "specialites"
@@ -440,3 +446,30 @@ class CalendrierNiveau(Base):
 
     mois_debut = Column(String(15), nullable=False)  # Exemple : "Octobre"
     mois_fin   = Column(String(15), nullable=False)  # Exemple : "Mars"
+
+
+# ============================================================
+#  MODÈLE 7 : Utilisateur
+#  Table PostgreSQL : "utilisateurs"
+#  Authentification — comptes du personnel (pas des étudiants/parents)
+# ============================================================
+class Utilisateur(Base):
+
+    __tablename__ = "utilisateurs"
+
+    id_utilisateur = Column(String(20), primary_key=True)  # Exemple : "USR-001"
+
+    # unique=True → un seul compte par email
+    email = Column(String(120), nullable=False, unique=True)
+
+    nom = Column(String(100), nullable=False)
+
+    # Hash bcrypt — JAMAIS le mot de passe en clair
+    mot_de_passe_hash = Column(String(255), nullable=False)
+
+    role = Column(SAEnum(RoleEnum), nullable=False, default=RoleEnum.CAISSIER)
+
+    # Un compte désactivé ne peut plus se connecter (sans le supprimer)
+    actif = Column(Boolean, nullable=False, default=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -62,6 +62,26 @@ class EtudiantIntrouvableError(DomaineError):
         self.id_etudiant = id_etudiant
 
 
+class EtudiantSuppressionImpossibleError(DomaineError):
+    """
+    Levée quand on essaie de supprimer un étudiant qui a déjà
+    des paiements, QR codes ou notifications liés en base.
+
+    RÈGLE MÉTIER : Pour préserver l'historique financier,
+    on ne supprime jamais un étudiant qui a un historique.
+
+    Exemple :
+        raise EtudiantSuppressionImpossibleError("ETU-2024-001")
+    """
+    def __init__(self, id_etudiant: str):
+        super().__init__(
+            f"Impossible de supprimer l'étudiant '{id_etudiant}' : "
+            f"il a un historique de paiements, QR codes ou notifications. "
+            f"Cet historique doit être conservé."
+        )
+        self.id_etudiant = id_etudiant
+
+
 # ============================================================
 #  ERREURS LIÉES AU PAIEMENT
 # ============================================================
@@ -214,3 +234,39 @@ class FichierExcelInvalideError(DomaineError):
             f"Veuillez fournir le fichier GestionScolaire_SIGC.xlsx."
         )
         self.nom_fichier = nom_fichier
+
+
+# ============================================================
+#  ERREURS LIÉES À L'AUTHENTIFICATION
+# ============================================================
+
+class UtilisateurDejaExistantError(DomaineError):
+    """Levée quand on essaie de créer un compte avec un email déjà utilisé."""
+    def __init__(self, email: str):
+        super().__init__(f"Un compte existe déjà avec l'email '{email}'.")
+        self.email = email
+
+
+class UtilisateurIntrouvableError(DomaineError):
+    """Levée quand on cherche un utilisateur qui n'existe pas."""
+    def __init__(self, identifiant: str):
+        super().__init__(f"Aucun utilisateur trouvé avec l'identifiant '{identifiant}'.")
+        self.identifiant = identifiant
+
+
+class IdentifiantsInvalidesError(DomaineError):
+    """
+    Levée lors d'une tentative de connexion avec un email ou
+    un mot de passe incorrect.
+
+    Message volontairement générique (ne précise pas lequel des deux
+    est faux) pour ne pas aider un attaquant à deviner les emails valides.
+    """
+    def __init__(self):
+        super().__init__("Email ou mot de passe incorrect.")
+
+
+class CompteDesactiveError(DomaineError):
+    """Levée quand un compte désactivé tente de se connecter."""
+    def __init__(self):
+        super().__init__("Ce compte a été désactivé. Contactez un administrateur.")

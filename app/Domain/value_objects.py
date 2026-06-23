@@ -170,6 +170,19 @@ class LienParent(Enum):
     TUTEUR = "Tuteur"
 
 
+class RoleUtilisateur(Enum):
+    """
+    Rôle d'un utilisateur du système (authentification).
+
+    - ADMIN      : accès complet, y compris gestion des comptes utilisateurs
+    - SECRETAIRE : gère les étudiants, spécialités, l'import Excel
+    - CAISSIER   : enregistre les versements de paiement, consulte les QR codes
+    """
+    ADMIN      = "ADMIN"
+    SECRETAIRE = "SECRETAIRE"
+    CAISSIER   = "CAISSIER"
+
+
 class StatutPaiement(Enum):
     """
     Statut d'une tranche de paiement.

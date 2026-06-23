@@ -39,11 +39,14 @@ from app.Application.use_cases.etudiant_use_cases import (
     TrouverEtudiantUseCase,
     ListerEtudiantsUseCase,
     HistoriquePaiementsEtudiantUseCase,
+    ModifierEtudiantUseCase,
+    SupprimerEtudiantUseCase,
 )
 
 # Les DTOs — ce que l'API reçoit et retourne
 from app.Application.DTOs.schemas import (
     EtudiantCreerDTO,
+    EtudiantModifierDTO,
     EtudiantReponseDTO,
     EtudiantDetailDTO,
     HistoriquePaiementsDTO,
@@ -53,6 +56,7 @@ from app.Application.DTOs.schemas import (
 from app.Domain.exceptions import (
     EtudiantDejaExistantError,
     EtudiantIntrouvableError,
+    EtudiantSuppressionImpossibleError,
 )
 
 # Les fonctions d'injection de dépendances
@@ -61,7 +65,15 @@ from app.Presentation.dependencies import (
     get_trouver_etudiant_uc,
     get_lister_etudiants_uc,
     get_historique_paiements_uc,
+    get_modifier_etudiant_uc,
+    get_supprimer_etudiant_uc,
 )
+
+# Sécurité : tous les utilisateurs connectés peuvent consulter ;
+# seuls secrétaire/admin peuvent créer/modifier ; seul admin peut supprimer.
+from app.Presentation.security import get_current_user, require_roles
+from app.Domain.entities import UtilisateurDomaine
+from app.Domain.value_objects import RoleUtilisateur
 
 
 # ── Créer le routeur ────────────────────────────────────────
@@ -108,8 +120,14 @@ async def lister_etudiants(
         None,
         description="Année académique (ex: 2024-2025)"
     ),
+    skip: int = Query(0, ge=0, description="Nombre d'étudiants à sauter (pagination)"),
+    limit: Optional[int] = Query(
+        100, ge=1, le=500,
+        description="Nombre maximum d'étudiants à retourner (pagination, max 500)"
+    ),
     # Le use case est injecté automatiquement par FastAPI
     use_case: ListerEtudiantsUseCase = Depends(get_lister_etudiants_uc),
+    _utilisateur: UtilisateurDomaine = Depends(get_current_user),
 ):
     """
     La route ne fait que trois choses :
@@ -123,6 +141,8 @@ async def lister_etudiants(
         niveau           = niveau,
         id_specialite    = id_specialite,
         annee_academique = annee,
+        skip             = skip,
+        limit            = limit,
     )
 
 
@@ -144,6 +164,9 @@ async def creer_etudiant(
     # Si un champ est manquant ou de mauvais type → erreur 422 automatique
     dto: EtudiantCreerDTO,
     use_case: CreerEtudiantUseCase = Depends(get_creer_etudiant_uc),
+    _utilisateur: UtilisateurDomaine = Depends(
+        require_roles(RoleUtilisateur.ADMIN, RoleUtilisateur.SECRETAIRE)
+    ),
 ):
     try:
         return await use_case.executer(dto)
@@ -179,6 +202,7 @@ async def obtenir_etudiant(
     # id_etudiant est extrait automatiquement depuis l'URL
     id_etudiant: str,
     use_case: TrouverEtudiantUseCase = Depends(get_trouver_etudiant_uc),
+    _utilisateur: UtilisateurDomaine = Depends(get_current_user),
 ):
     try:
         return await use_case.executer(id_etudiant)
@@ -212,6 +236,7 @@ async def historique_paiements(
     use_case: HistoriquePaiementsEtudiantUseCase = Depends(
         get_historique_paiements_uc
     ),
+    _utilisateur: UtilisateurDomaine = Depends(get_current_user),
 ):
     try:
         return await use_case.executer(id_etudiant)
@@ -219,5 +244,71 @@ async def historique_paiements(
     except EtudiantIntrouvableError as e:
         raise HTTPException(
             status_code = status.HTTP_404_NOT_FOUND,
+            detail      = str(e),
+        )
+
+
+# ============================================================
+#  ROUTE 5 : Modifier un étudiant
+#  PUT /api/v1/etudiants/ETU-2024-001
+# ============================================================
+@router.put(
+    "/{id_etudiant}",
+    response_model=EtudiantReponseDTO,
+    summary="Modifier un étudiant existant",
+    description="Met à jour uniquement les champs fournis dans le corps de la requête.",
+)
+async def modifier_etudiant(
+    id_etudiant: str,
+    dto: EtudiantModifierDTO,
+    use_case: ModifierEtudiantUseCase = Depends(get_modifier_etudiant_uc),
+    _utilisateur: UtilisateurDomaine = Depends(
+        require_roles(RoleUtilisateur.ADMIN, RoleUtilisateur.SECRETAIRE)
+    ),
+):
+    try:
+        return await use_case.executer(id_etudiant, dto)
+
+    except EtudiantIntrouvableError as e:
+        raise HTTPException(
+            status_code = status.HTTP_404_NOT_FOUND,
+            detail      = str(e),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code = status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail      = str(e),
+        )
+
+
+# ============================================================
+#  ROUTE 6 : Supprimer un étudiant
+#  DELETE /api/v1/etudiants/ETU-2024-001
+# ============================================================
+@router.delete(
+    "/{id_etudiant}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Supprimer un étudiant",
+    description=(
+        "Supprime un étudiant. Échoue avec un 409 si l'étudiant a déjà "
+        "un historique de paiements, QR codes ou notifications."
+    ),
+)
+async def supprimer_etudiant(
+    id_etudiant: str,
+    use_case: SupprimerEtudiantUseCase = Depends(get_supprimer_etudiant_uc),
+    _utilisateur: UtilisateurDomaine = Depends(require_roles(RoleUtilisateur.ADMIN)),
+):
+    try:
+        await use_case.executer(id_etudiant)
+
+    except EtudiantIntrouvableError as e:
+        raise HTTPException(
+            status_code = status.HTTP_404_NOT_FOUND,
+            detail      = str(e),
+        )
+    except EtudiantSuppressionImpossibleError as e:
+        raise HTTPException(
+            status_code = status.HTTP_409_CONFLICT,
             detail      = str(e),
         )

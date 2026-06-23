@@ -7,7 +7,10 @@ def lire_racine():
     return {"Bienvenue": "Bienvenue sur mon API FastAPI!"}
 
 
-# ============================================================
+
+
+
+    # ============================================================
 #  FICHIER : main.py
 #
 #  RÔLE : Point d'entrée de l'application FastAPI.
@@ -36,12 +39,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 
 # Création des tables au démarrage
-from app.Infrastructure.database.session import create_tables
+from app.Infrastructure.database.session import initialiser_base_de_donnees
+import app.Infrastructure.database.session as db_session
+
+# Gestionnaire d'erreurs global (404/409/400/500 propres)
+from app.Presentation.error_handlers import enregistrer_handlers
 
 # Les routeurs de chaque domaine fonctionnel
 from app.Presentation.routes.etudiant_routes import router as etudiant_router
 from app.Presentation.routes.paiement_routes import router as paiement_router
 from app.Presentation.routes.import_routes   import router as import_router
+from app.Presentation.routes.specialite_routes import router as specialite_router
+from app.Presentation.routes.calendrier_routes import router as calendrier_router
+from app.Presentation.routes.dashboard_routes import router as dashboard_router
+from app.Presentation.routes.auth_routes import router as auth_router
 
 
 # ============================================================
@@ -65,16 +76,16 @@ async def lifespan(app: FastAPI):
     # ── Au démarrage ──────────────────────────────────────
     print("🚀 Démarrage de LGS...")
 
-    # Créer toutes les tables PostgreSQL si elles n'existent pas
-    # Équivaut à : CREATE TABLE IF NOT EXISTS etudiants (...) etc.
-    await create_tables()
-    print("✅ Tables PostgreSQL prêtes.")
+    # Connexion automatique à Supabase OU PostgreSQL local
+    # selon disponibilité (voir app/Infrastructure/database/session.py)
+    await initialiser_base_de_donnees()
 
     # L'application tourne pendant ce yield
     yield
 
     # ── À l'arrêt ─────────────────────────────────────────
-    # (rien à nettoyer ici — SQLAlchemy ferme les connexions seul)
+    if db_session.engine:
+        await db_session.engine.dispose()
     print("👋 Arrêt de LGS.")
 
 
@@ -130,10 +141,18 @@ app.add_middleware(
     # allow_credentials = autoriser les cookies et headers d'auth
     allow_credentials = True,
     # allow_methods = méthodes HTTP autorisées
-    allow_methods     = ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     # allow_headers = headers HTTP autorisés
     allow_headers     = ["*"],
 )
+
+
+# ============================================================
+#  GESTIONNAIRE D'ERREURS GLOBAL
+# ============================================================
+# Convertit toutes les exceptions métier du Domaine en réponses
+# JSON HTTP propres (404, 409, 400...) + filet de sécurité 500.
+enregistrer_handlers(app)
 
 
 # ============================================================
@@ -145,6 +164,10 @@ app.add_middleware(
 app.include_router(etudiant_router, prefix="/api/v1")
 app.include_router(paiement_router, prefix="/api/v1")
 app.include_router(import_router,   prefix="/api/v1")
+app.include_router(specialite_router, prefix="/api/v1")
+app.include_router(calendrier_router, prefix="/api/v1")
+app.include_router(dashboard_router,  prefix="/api/v1")
+app.include_router(auth_router,       prefix="/api/v1")
 
 
 # ============================================================
@@ -153,24 +176,18 @@ app.include_router(import_router,   prefix="/api/v1")
 
 @app.get("/", tags=["Santé"], summary="Accueil de l'API")
 async def accueil():
-    """
-    Route racine — confirme que l'API est en ligne.
-    Utile pour les health checks des serveurs de déploiement.
-    """
     return {
-        "application": settings.APP_TITLE,
-        "version":     settings.APP_VERSION,
-        "statut":      "en ligne ✅",
+        "application":   settings.APP_TITLE,
+        "version":       settings.APP_VERSION,
+        "statut":        "en ligne ✅",
+        "base_active":   db_session.source_active,
         "documentation": "/docs",
     }
 
 
 @app.get("/health", tags=["Santé"], summary="Vérification de santé")
 async def health_check():
-    """
-    Endpoint de health check.
-    Les outils de monitoring (Docker, Kubernetes...) appellent
-    cette route pour savoir si l'application fonctionne.
-    Retourne 200 OK si tout va bien.
-    """
-    return {"statut": "ok"}
+    return {
+        "statut":      "ok",
+        "base_active": db_session.source_active,
+    }

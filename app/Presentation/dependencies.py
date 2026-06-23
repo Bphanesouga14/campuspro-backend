@@ -27,18 +27,35 @@ from app.Infrastructure.repositories.autres_repos import (
     SQLAlchemyPaiementRepository, SQLAlchemyQRCodeRepository,
     SQLAlchemyNotificationRepository,
 )
+from app.Infrastructure.repositories.calendrier_repo import (
+    SQLAlchemyCalendrierRepository,
+)
+from app.Infrastructure.repositories.utilisateur_repo import (
+    SQLAlchemyUtilisateurRepository,
+)
+from app.Infrastructure.security.mot_de_passe import hasher_mot_de_passe, verifier_mot_de_passe
+from app.Infrastructure.security.jwt_service import creer_token
 from app.Infrastructure.services.qr_notification_services import (
     QRCodeServiceImpl, NotificationServiceImpl,
 )
 from app.Application.use_cases.etudiant_use_cases import (
     CreerEtudiantUseCase, TrouverEtudiantUseCase,
     ListerEtudiantsUseCase, HistoriquePaiementsEtudiantUseCase,
+    ModifierEtudiantUseCase, SupprimerEtudiantUseCase,
 )
 from app.Application.use_cases.paiement_use_cases import (
     EnregistrerVersementUseCase, ListerPaiementsEnRetardUseCase,
     ObtenirQRCodeEtudiantUseCase,
 )
 from app.Application.use_cases.import_use_cases import ImporterExcelUseCase
+from app.Application.use_cases.specialite_use_cases import (
+    ListerSpecialitesUseCase, ObtenirSpecialiteUseCase,
+    CreerOuModifierSpecialiteUseCase,
+)
+from app.Application.use_cases.dashboard_use_case import TableauDeBordUseCase
+from app.Application.use_cases.auth_use_cases import (
+    ConnexionUseCase, CreerUtilisateurUseCase, ListerUtilisateursUseCase,
+)
 
 
 # ── Repositories ─────────────────────────────────────────────
@@ -59,6 +76,12 @@ def get_qr_repo(db: AsyncSession = Depends(get_db)):
 
 def get_notif_repo(db: AsyncSession = Depends(get_db)):
     return SQLAlchemyNotificationRepository(db)
+
+def get_calendrier_repo(db: AsyncSession = Depends(get_db)):
+    return SQLAlchemyCalendrierRepository(db)
+
+def get_utilisateur_repo(db: AsyncSession = Depends(get_db)):
+    return SQLAlchemyUtilisateurRepository(db)
 
 
 # ── Use Cases ────────────────────────────────────────────────
@@ -121,6 +144,7 @@ def get_importer_excel_uc(
     paiement_repo   = Depends(get_paiement_repo),
     qr_repo         = Depends(get_qr_repo),
     notif_repo      = Depends(get_notif_repo),
+    calendrier_repo = Depends(get_calendrier_repo),
 ):
     return ImporterExcelUseCase(
         specialite_repo = specialite_repo,
@@ -128,4 +152,69 @@ def get_importer_excel_uc(
         paiement_repo   = paiement_repo,
         qr_repo         = qr_repo,
         notif_repo      = notif_repo,
+        calendrier_repo = calendrier_repo,
     )
+
+
+# ── Étudiant : modification / suppression ───────────────────
+
+def get_modifier_etudiant_uc(
+    repo: SQLAlchemyEtudiantRepository = Depends(get_etudiant_repo),
+):
+    return ModifierEtudiantUseCase(repo)
+
+
+def get_supprimer_etudiant_uc(
+    repo: SQLAlchemyEtudiantRepository = Depends(get_etudiant_repo),
+):
+    return SupprimerEtudiantUseCase(repo)
+
+
+# ── Spécialités ───────────────────────────────────────────────
+
+def get_lister_specialites_uc(
+    repo: SQLAlchemySpecialiteRepository = Depends(get_specialite_repo),
+):
+    return ListerSpecialitesUseCase(repo)
+
+
+def get_obtenir_specialite_uc(
+    repo: SQLAlchemySpecialiteRepository = Depends(get_specialite_repo),
+):
+    return ObtenirSpecialiteUseCase(repo)
+
+
+def get_creer_specialite_uc(
+    repo: SQLAlchemySpecialiteRepository = Depends(get_specialite_repo),
+):
+    return CreerOuModifierSpecialiteUseCase(repo)
+
+
+# ── Tableau de bord ──────────────────────────────────────────
+
+def get_tableau_de_bord_uc(
+    etudiant_repo   = Depends(get_etudiant_repo),
+    paiement_repo   = Depends(get_paiement_repo),
+    specialite_repo = Depends(get_specialite_repo),
+):
+    return TableauDeBordUseCase(etudiant_repo, paiement_repo, specialite_repo)
+
+
+# ── Authentification ─────────────────────────────────────────
+
+def get_connexion_uc(
+    repo = Depends(get_utilisateur_repo),
+):
+    return ConnexionUseCase(repo, verifier_mot_de_passe, creer_token)
+
+
+def get_creer_utilisateur_uc(
+    repo = Depends(get_utilisateur_repo),
+):
+    return CreerUtilisateurUseCase(repo, hasher_mot_de_passe)
+
+
+def get_lister_utilisateurs_uc(
+    repo = Depends(get_utilisateur_repo),
+):
+    return ListerUtilisateursUseCase(repo)

@@ -16,6 +16,8 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
+import base64
 
 from app.Application.use_cases.paiement_use_cases import (
     EnregistrerVersementUseCase,
@@ -40,6 +42,9 @@ from app.Presentation.dependencies import (
     get_lister_retards_uc,
     get_obtenir_qr_uc,
 )
+from app.Presentation.security import get_current_user, require_roles
+from app.Domain.entities import UtilisateurDomaine
+from app.Domain.value_objects import RoleUtilisateur
 
 # ── Routeur paiements ────────────────────────────────────────
 router = APIRouter(tags=["Paiements & QR Codes"])
@@ -79,6 +84,9 @@ async def enregistrer_versement(
     versement: VersementDTO,
     use_case: EnregistrerVersementUseCase = Depends(
         get_enregistrer_versement_uc
+    ),
+    _utilisateur: UtilisateurDomaine = Depends(
+        require_roles(RoleUtilisateur.ADMIN, RoleUtilisateur.CAISSIER)
     ),
 ):
     try:
@@ -131,6 +139,7 @@ Utile pour :
 )
 async def paiements_en_retard(
     use_case: ListerPaiementsEnRetardUseCase = Depends(get_lister_retards_uc),
+    _utilisateur: UtilisateurDomaine = Depends(get_current_user),
 ):
     # Pas d'exception possible ici → on retourne simplement la liste
     # (peut être vide si aucun retard)
@@ -161,6 +170,7 @@ Pour l'afficher dans une page web :
 async def obtenir_qr_code(
     id_etudiant: str,
     use_case: ObtenirQRCodeEtudiantUseCase = Depends(get_obtenir_qr_uc),
+    _utilisateur: UtilisateurDomaine = Depends(get_current_user),
 ):
     try:
         return await use_case.executer(id_etudiant)
@@ -175,3 +185,49 @@ async def obtenir_qr_code(
             status_code = status.HTTP_404_NOT_FOUND,
             detail      = str(e),
         )
+
+
+# ============================================================
+#  ROUTE 4 : Image PNG du QR code (binaire direct)
+#  GET /api/v1/etudiants/{id_etudiant}/qr-code/image
+# ============================================================
+@router.get(
+    "/etudiants/{id_etudiant}/qr-code/image",
+    summary="Image PNG du QR code actif d'un étudiant",
+    description="""
+Retourne directement l'image PNG du QR code (binaire), pratique pour
+l'afficher dans une balise `<img src="/api/v1/etudiants/ETU-001/qr-code/image">`
+sans devoir décoder le base64 côté front-end.
+
+**Erreur 404** si aucun QR code actif n'existe.
+    """,
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+async def obtenir_qr_code_image(
+    id_etudiant: str,
+    use_case: ObtenirQRCodeEtudiantUseCase = Depends(get_obtenir_qr_uc),
+    _utilisateur: UtilisateurDomaine = Depends(get_current_user),
+):
+    try:
+        qr = await use_case.executer(id_etudiant)
+    except EtudiantIntrouvableError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except QRCodeIntrouvableError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    if not qr.qr_data:
+        raise HTTPException(
+            status_code = status.HTTP_404_NOT_FOUND,
+            detail      = "Aucune image QR code disponible pour cet étudiant.",
+        )
+
+    try:
+        image_bytes = base64.b64decode(qr.qr_data)
+    except Exception:
+        raise HTTPException(
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail      = "Le QR code stocké est corrompu ou n'est pas une image valide.",
+        )
+
+    return Response(content=image_bytes, media_type="image/png")

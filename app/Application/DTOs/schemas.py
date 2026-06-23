@@ -28,6 +28,57 @@ class SpecialiteReponseDTO(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SpecialiteCreerDTO(BaseModel):
+    """Données reçues pour créer ou modifier une spécialité."""
+    id_specialite: str = Field(..., examples=["SP-001"])
+    code: str = Field(..., examples=["INFO1"])
+    nom_specialite: str
+    departement: str
+    niveau: int = Field(..., ge=1, le=5)
+    duree_ans: int = Field(1, ge=1)
+    annee_academique: str = Field(..., examples=["2024-2025"])
+    tranche_1: Decimal = Field(..., ge=0)
+    date_limite_t1: str = Field(..., examples=["31/10/2024"])
+    tranche_2: Decimal = Field(..., ge=0)
+    date_limite_t2: str = Field(..., examples=["31/01/2025"])
+    tranche_3: Decimal = Field(..., ge=0)
+    date_limite_t3: str = Field(..., examples=["30/04/2025"])
+
+    @field_validator("annee_academique")
+    @classmethod
+    def valider_annee(cls, v):
+        if not re.match(r"^\d{4}-\d{4}$", v):
+            raise ValueError(f"Format d'année invalide '{v}'. Exemple : 2024-2025")
+        return v
+
+
+class CalendrierNiveauDTO(BaseModel):
+    """Réponse API pour une ligne du calendrier académique d'un niveau."""
+    niveau: int
+    groupe: str
+    demarrage_academique: str
+    tranche_1_limite: str
+    tranche_2_limite: str
+    tranche_3_limite: str
+    condition_demarrage: str
+    mois_debut: str
+    mois_fin: str
+    model_config = {"from_attributes": True}
+
+
+class TableauDeBordDTO(BaseModel):
+    """Réponse API pour le tableau de bord global."""
+    nb_etudiants: int
+    total_attendu: float
+    total_verse: float
+    total_reste: float
+    taux_recouvrement: float = Field(..., description="Pourcentage du total attendu déjà versé")
+    nb_etudiants_a_jour: int
+    nb_etudiants_en_retard: int
+    nb_paiements_en_retard: int
+    nb_specialites: int
+
+
 class EtudiantCreerDTO(BaseModel):
     """Données reçues pour créer un étudiant (formulaire ou import Excel)."""
     id_etudiant: str = Field(..., examples=["ETU-2024-001"])
@@ -61,6 +112,35 @@ class EtudiantCreerDTO(BaseModel):
         if not re.match(r"^\d{4}-\d{4}$", v):
             raise ValueError(f"Format d'année invalide '{v}'. Exemple : 2024-2025")
         return v
+
+
+class EtudiantModifierDTO(BaseModel):
+    """
+    Données reçues pour modifier un étudiant existant (PUT).
+    Tous les champs sont optionnels : seuls les champs fournis sont mis à jour.
+    """
+    nom: Optional[str] = None
+    prenom: Optional[str] = None
+    date_naissance: Optional[str] = None
+    sexe: Optional[str] = None
+    id_specialite: Optional[str] = None
+    code_specialite: Optional[str] = None
+    niveau: Optional[int] = Field(None, ge=1, le=5)
+    annee_academique: Optional[str] = None
+    email_etudiant: Optional[str] = None
+    telephone_etudiant: Optional[str] = None
+    nom_parent: Optional[str] = None
+    prenom_parent: Optional[str] = None
+    lien_parent: Optional[str] = None
+    telephone_parent: Optional[str] = None
+    email_parent: Optional[str] = None
+
+    @field_validator("sexe")
+    @classmethod
+    def valider_sexe(cls, v):
+        if v is not None and v.upper() not in ("M", "F"):
+            raise ValueError("Le sexe doit être 'M' ou 'F'")
+        return v.upper() if v else v
 
 
 class EtudiantReponseDTO(BaseModel):
@@ -184,6 +264,50 @@ class ImportExcelReponseDTO(BaseModel):
     message: str
     total_lignes: int
     resultats: List[ResultatFeuilleDTO]
+
+
+# ════════════════════════════════════════════════════════════
+#  DTOs : AUTHENTIFICATION
+# ════════════════════════════════════════════════════════════
+
+class UtilisateurCreerDTO(BaseModel):
+    """Données reçues pour créer un compte utilisateur (réservé aux admins)."""
+    email: str = Field(..., examples=["secretaire@ecole.cm"])
+    nom: str = Field(..., examples=["Jeanne Fotso"])
+    mot_de_passe: str = Field(..., min_length=8, description="Minimum 8 caractères")
+    role: str = Field(..., description="ADMIN, SECRETAIRE ou CAISSIER")
+
+    @field_validator("email")
+    @classmethod
+    def valider_email(cls, v):
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            raise ValueError(f"Adresse email invalide : '{v}'")
+        return v.lower()
+
+    @field_validator("role")
+    @classmethod
+    def valider_role(cls, v):
+        if v.upper() not in ("ADMIN", "SECRETAIRE", "CAISSIER"):
+            raise ValueError("Le rôle doit être ADMIN, SECRETAIRE ou CAISSIER")
+        return v.upper()
+
+
+class UtilisateurReponseDTO(BaseModel):
+    """Réponse API pour un compte utilisateur (sans le hash du mot de passe)."""
+    id_utilisateur: str
+    email: str
+    nom: str
+    role: str
+    actif: bool
+    model_config = {"from_attributes": True}
+
+
+class TokenReponseDTO(BaseModel):
+    """Réponse API après une connexion réussie."""
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int = Field(..., description="Durée de validité du token, en secondes")
+    utilisateur: UtilisateurReponseDTO
 
 
 EtudiantDetailDTO.model_rebuild()

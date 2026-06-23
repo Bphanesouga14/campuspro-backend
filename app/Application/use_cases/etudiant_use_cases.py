@@ -41,6 +41,7 @@ from app.Domain.exceptions import (
 # On importe les DTOs de la couche Application
 from app.Application.DTOs.schemas import (
     EtudiantCreerDTO,
+    EtudiantModifierDTO,
     EtudiantReponseDTO,
     EtudiantDetailDTO,
     PaiementReponseDTO,
@@ -276,6 +277,8 @@ class ListerEtudiantsUseCase:
         niveau:           Optional[int] = None,
         id_specialite:    Optional[str] = None,
         annee_academique: Optional[str] = None,
+        skip:             int = 0,
+        limit:            Optional[int] = None,
     ) -> List[EtudiantReponseDTO]:
 
         # Demander la liste au repository avec les filtres
@@ -283,6 +286,8 @@ class ListerEtudiantsUseCase:
             niveau           = niveau,
             id_specialite    = id_specialite,
             annee_academique = annee_academique,
+            skip             = skip,
+            limit            = limit,
         )
 
         resultats = []
@@ -357,3 +362,87 @@ class HistoriquePaiementsEtudiantUseCase:
                 for p in paiements
             ],
         )
+
+
+# ============================================================
+#  CAS D'USAGE 5 : ModifierEtudiantUseCase
+# ============================================================
+class ModifierEtudiantUseCase:
+    """
+    Modifie un étudiant existant.
+
+    SCÉNARIO :
+    Une faute de frappe dans le nom, un changement de spécialité,
+    une mise à jour du contact parent... Seuls les champs fournis
+    dans le DTO sont modifiés ; les autres restent inchangés.
+    """
+
+    def __init__(self, etudiant_repo: IEtudiantRepository):
+        self._etudiant_repo = etudiant_repo
+
+    async def executer(self, id_etudiant: str, dto: EtudiantModifierDTO) -> EtudiantReponseDTO:
+        etudiant = await self._etudiant_repo.trouver_par_id(id_etudiant)
+        if not etudiant:
+            raise EtudiantIntrouvableError(id_etudiant)
+
+        # On applique uniquement les champs fournis (exclude_unset=True)
+        donnees = dto.model_dump(exclude_unset=True)
+
+        if "nom" in donnees:
+            etudiant.nom = donnees["nom"].upper()
+        if "prenom" in donnees:
+            etudiant.prenom = donnees["prenom"].capitalize()
+        if "date_naissance" in donnees:
+            etudiant.date_naissance = donnees["date_naissance"]
+        if "sexe" in donnees:
+            etudiant.sexe = Sexe(donnees["sexe"])
+        if "id_specialite" in donnees:
+            etudiant.id_specialite = donnees["id_specialite"]
+        if "code_specialite" in donnees:
+            etudiant.code_specialite = donnees["code_specialite"]
+        if "niveau" in donnees:
+            etudiant.niveau = Niveau(donnees["niveau"])
+        if "annee_academique" in donnees:
+            etudiant.annee_academique = donnees["annee_academique"]
+        if "email_etudiant" in donnees:
+            etudiant.email_etudiant = Email(donnees["email_etudiant"]) if donnees["email_etudiant"] else None
+        if "telephone_etudiant" in donnees:
+            etudiant.telephone_etudiant = Telephone(donnees["telephone_etudiant"]) if donnees["telephone_etudiant"] else None
+        if "nom_parent" in donnees:
+            etudiant.nom_parent = donnees["nom_parent"].upper()
+        if "prenom_parent" in donnees:
+            etudiant.prenom_parent = donnees["prenom_parent"].capitalize()
+        if "lien_parent" in donnees:
+            etudiant.lien_parent = LienParent(donnees["lien_parent"])
+        if "telephone_parent" in donnees:
+            etudiant.telephone_parent = Telephone(donnees["telephone_parent"]) if donnees["telephone_parent"] else None
+        if "email_parent" in donnees:
+            etudiant.email_parent = Email(donnees["email_parent"]) if donnees["email_parent"] else None
+
+        try:
+            etudiant_sauvegarde = await self._etudiant_repo.sauvegarder(etudiant)
+        except ValueError as e:
+            raise ValueError(f"Données invalides : {e}")
+
+        return _domaine_vers_reponse(etudiant_sauvegarde)
+
+
+# ============================================================
+#  CAS D'USAGE 6 : SupprimerEtudiantUseCase
+# ============================================================
+class SupprimerEtudiantUseCase:
+    """
+    Supprime un étudiant.
+
+    ATTENTION : à utiliser avec précaution — supprime aussi
+    (via les contraintes de clé étrangère / cascade applicative)
+    l'historique de paiements lié si la base l'exige.
+    """
+
+    def __init__(self, etudiant_repo: IEtudiantRepository):
+        self._etudiant_repo = etudiant_repo
+
+    async def executer(self, id_etudiant: str) -> None:
+        supprime = await self._etudiant_repo.supprimer(id_etudiant)
+        if not supprime:
+            raise EtudiantIntrouvableError(id_etudiant)

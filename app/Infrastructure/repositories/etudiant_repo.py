@@ -11,6 +11,7 @@
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.exc import IntegrityError
 
 from app.Infrastructure.database.models import (
     Etudiant   as EtudiantModele,
@@ -18,6 +19,7 @@ from app.Infrastructure.database.models import (
 )
 from app.Domain.interfaces import IEtudiantRepository, ISpecialiteRepository
 from app.Domain.entities import EtudiantDomaine, SpecialiteDomaine
+from app.Domain.exceptions import EtudiantSuppressionImpossibleError
 from app.Infrastructure.database.mappers import (
     etudiant_modele_vers_domaine, etudiant_domaine_vers_modele,
     specialite_modele_vers_domaine, specialite_domaine_vers_modele,
@@ -62,8 +64,10 @@ class SQLAlchemyEtudiantRepository(IEtudiantRepository):
         niveau: Optional[int] = None,
         id_specialite: Optional[str] = None,
         annee_academique: Optional[str] = None,
+        skip: int = 0,
+        limit: Optional[int] = None,
     ) -> List[EtudiantDomaine]:
-        """SELECT * FROM etudiants WHERE <filtres> ORDER BY nom, prenom"""
+        """SELECT * FROM etudiants WHERE <filtres> ORDER BY nom, prenom [OFFSET/LIMIT]"""
         stmt = select(EtudiantModele)
         conditions = []
         if niveau is not None:
@@ -75,6 +79,10 @@ class SQLAlchemyEtudiantRepository(IEtudiantRepository):
         if conditions:
             stmt = stmt.where(and_(*conditions))  # and_() = AND en SQL
         stmt = stmt.order_by(EtudiantModele.nom, EtudiantModele.prenom)
+        if skip:
+            stmt = stmt.offset(skip)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         modeles = (await self._db.execute(stmt)).scalars().all()
         return [etudiant_modele_vers_domaine(m) for m in modeles]
 
@@ -84,7 +92,14 @@ class SQLAlchemyEtudiantRepository(IEtudiantRepository):
         if not modele:
             return False
         await self._db.delete(modele)
-        await self._db.flush()
+        try:
+            await self._db.flush()
+        except IntegrityError:
+            # L'étudiant a des paiements/QR/notifications liés (clé étrangère).
+            # On annule la suppression en cours et on lève une erreur métier claire
+            # plutôt que de laisser remonter une erreur SQL brute.
+            await self._db.rollback()
+            raise EtudiantSuppressionImpossibleError(id_etudiant)
         return True
 
     async def existe(self, id_etudiant: str) -> bool:
