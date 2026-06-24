@@ -41,6 +41,7 @@ from app.Presentation.dependencies import (
     get_enregistrer_versement_uc,
     get_lister_retards_uc,
     get_obtenir_qr_uc,
+    get_etudiant_repo,
 )
 from app.Presentation.security import get_current_user, require_roles
 from app.Domain.entities import UtilisateurDomaine
@@ -207,6 +208,7 @@ sans devoir décoder le base64 côté front-end.
 async def obtenir_qr_code_image(
     id_etudiant: str,
     use_case: ObtenirQRCodeEtudiantUseCase = Depends(get_obtenir_qr_uc),
+    etudiant_repo = Depends(get_etudiant_repo),
     _utilisateur: UtilisateurDomaine = Depends(get_current_user),
 ):
     try:
@@ -216,18 +218,81 @@ async def obtenir_qr_code_image(
     except QRCodeIntrouvableError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    if not qr.qr_data:
-        raise HTTPException(
-            status_code = status.HTTP_404_NOT_FOUND,
-            detail      = "Aucune image QR code disponible pour cet étudiant.",
-        )
+    contenu = qr.qr_data
+
+    # Si qr_data est vide (cas fréquent après un import Excel sans image),
+    # on reconstruit le contenu du QR à partir des infos de l'étudiant.
+    if not contenu:
+        etudiant = await etudiant_repo.trouver_par_id(id_etudiant)
+        infos = {
+            "id_qrcode":   qr.id_qrcode,
+            "id_etudiant": qr.id_etudiant,
+            "specialite":  qr.id_specialite,
+            "niveau":      qr.niveau,
+            "valide":      qr.valide_jusqua,
+        }
+        if etudiant:
+            infos["matricule"] = etudiant.matricule.valeur if hasattr(etudiant.matricule, "valeur") else str(etudiant.matricule)
+            infos["nom"]       = f"{etudiant.nom} {etudiant.prenom}"
+        import json as _json
+        contenu = _json.dumps(infos, ensure_ascii=False)
+
+    image_bytes = _qr_data_vers_png(contenu, id_etudiant)
+    return Response(content=image_bytes, media_type="image/png")
+
+
+def _qr_data_vers_png(qr_data: str, id_etudiant: str) -> bytes:
+    """
+    Convertit le champ qr_data en image PNG (bytes).
+
+    Le champ qr_data peut contenir deux formats différents :
+    1. Le base64 d'une image PNG (QR généré par l'app lors d'un paiement)
+    2. Du texte JSON (QR importé depuis Excel : {"matricule": ..., "nom": ...})
+
+    On essaie d'abord de le décoder comme une image PNG. Si ça échoue
+    (ce n'est pas une image), on génère une nouvelle image QR à partir
+    du texte avec la bibliothèque qrcode.
+    """
+    import base64 as _b64
+
+    # ── Cas 1 : qr_data est déjà une image PNG en base64 ─────
+    # On retire un éventuel préfixe "data:image/png;base64,"
+    donnees = qr_data
+    if donnees.startswith("data:"):
+        donnees = donnees.split(",", 1)[-1]
 
     try:
-        image_bytes = base64.b64decode(qr.qr_data)
+        image_bytes = _b64.b64decode(donnees, validate=True)
+        # Vérifier la signature PNG (8 premiers octets)
+        if image_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+            return image_bytes
     except Exception:
+        pass  # Ce n'est pas du base64 PNG → on passe au cas 2
+
+    # ── Cas 2 : qr_data est du texte (JSON) → générer le QR ──
+    try:
+        import qrcode
+        import io as _io
+
+        qr = qrcode.QRCode(
+            version          = 1,
+            error_correction = qrcode.constants.ERROR_CORRECT_H,
+            box_size         = 10,
+            border           = 4,
+        )
+        qr.add_data(qr_data)        # On encode le texte tel quel
+        qr.make(fit=True)
+        image  = qr.make_image(fill_color="black", back_color="white")
+        buffer = _io.BytesIO()
+        image.save(buffer)
+        return buffer.getvalue()
+    except ImportError:
         raise HTTPException(
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail      = "Le QR code stocké est corrompu ou n'est pas une image valide.",
+            detail      = "La bibliothèque 'qrcode' n'est pas installée sur le serveur.",
         )
-
-    return Response(content=image_bytes, media_type="image/png")
+    except Exception as e:
+        raise HTTPException(
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail      = f"Impossible de générer l'image QR : {e}",
+        )
