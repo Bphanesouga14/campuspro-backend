@@ -1,0 +1,56 @@
+# ── Framework web ────────────────────────────────────────────
+#fastapi#==0.115.0
+#uvicorn[standard]#==0.30.6
+
+# ── Base de données ──────────────────────────────────────────
+#sqlalchemy[asyncio]#==2.0.35
+
+# asyncpg = driver PostgreSQL async — OBLIGATOIRE pour Supabase
+# C'est lui qui parle directement à PostgreSQL
+#asyncpg#==0.31.0
+
+# ── Validation des données ───────────────────────────────────
+#pydantic#==2.9.2
+
+# pydantic-settings = lit le fichier .env automatiquement
+#pydantic-settings#==2.5.2
+
+# ── Fichiers Excel ───────────────────────────────────────────
+#openpyxl#==3.1.5
+
+# ── Upload de fichiers ───────────────────────────────────────
+# OBLIGATOIRE pour que FastAPI accepte les UploadFile
+#python-multipart==0.0.12
+
+# ── QR Code ──────────────────────────────────────────────────
+# [pil] installe aussi Pillow pour générer les images PNG
+#qrcode[pil]==7.4.2
+
+
+# ── Framework web ────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+
+# ── Base de données ──────────────────────────────────────────
+sqlalchemy[asyncio]
+asyncpg
+
+# ── Validation des données ───────────────────────────────────
+pydantic
+pydantic-settings
+
+# ── Fichiers Excel ───────────────────────────────────────────
+openpyxl
+
+# ── Upload de fichiers ───────────────────────────────────────
+python-multipart
+
+# ── QR Code ──────────────────────────────────────────────────
+qrcode[pil]
+
+# ── Authentification ─────────────────────────────────────────
+bcrypt
+pyjwt
+
+# ── Variables d'environnement ────────────────────────────────
+python-dotenv
