@@ -35,7 +35,7 @@ Vue d'ensemble pour la direction :
 async def tableau_de_bord(
     use_case: TableauDeBordUseCase = Depends(get_tableau_de_bord_uc),
     _utilisateur: UtilisateurDomaine = Depends(
-        require_roles(RoleUtilisateur.ADMIN, RoleUtilisateur.SECRETAIRE)
+        require_roles(RoleUtilisateur.ADMIN, RoleUtilisateur.SECRETAIRE, RoleUtilisateur.CAISSIER)
     ),
 ):
     return await use_case.executer()
