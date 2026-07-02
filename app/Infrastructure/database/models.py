@@ -195,6 +195,9 @@ class Etudiant(Base):
     telephone_parent = Column(String(20),  nullable=False)
     email_parent     = Column(String(120), nullable=True)
 
+    # Photo de l'étudiant (base64 ou URL)
+    photo            = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -471,5 +474,8 @@ class Utilisateur(Base):
 
     # Un compte désactivé ne peut plus se connecter (sans le supprimer)
     actif = Column(Boolean, nullable=False, default=True)
+
+    # Photo de profil (base64)
+    photo = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)

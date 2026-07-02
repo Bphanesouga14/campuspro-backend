@@ -13,11 +13,16 @@ class Settings(BaseSettings):
     # Ordre de priorité : "supabase" (défaut) ou "local"
     DATABASE_PRIORITY: str = "supabase"
 
-    APP_TITLE: str = "Logiciel de Gestion Scolaire"
+    APP_TITLE: str = "CampusPro — Gestion des étudiants, paiements & QR codes"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
 
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
+    ALLOWED_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ]
 
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

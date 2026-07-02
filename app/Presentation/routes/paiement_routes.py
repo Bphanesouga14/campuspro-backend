@@ -43,6 +43,7 @@ from app.Presentation.dependencies import (
     get_obtenir_qr_uc,
     get_etudiant_repo,
 )
+from app.Infrastructure.database.session import get_db
 from app.Presentation.security import get_current_user, require_roles
 from app.Domain.entities import UtilisateurDomaine
 from app.Domain.value_objects import RoleUtilisateur
@@ -209,6 +210,7 @@ async def obtenir_qr_code_image(
     id_etudiant: str,
     use_case: ObtenirQRCodeEtudiantUseCase = Depends(get_obtenir_qr_uc),
     etudiant_repo = Depends(get_etudiant_repo),
+    db = Depends(get_db),
     _utilisateur: UtilisateurDomaine = Depends(get_current_user),
 ):
     try:
@@ -218,27 +220,122 @@ async def obtenir_qr_code_image(
     except QRCodeIntrouvableError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    contenu = qr.qr_data
+    # Récupérer l'étudiant et sa photo
+    from app.Infrastructure.database.models import Etudiant as EModele
+    e_modele = await db.get(EModele, id_etudiant)
+    etudiant = await etudiant_repo.trouver_par_id(id_etudiant)
 
-    # Si qr_data est vide (cas fréquent après un import Excel sans image),
-    # on reconstruit le contenu du QR à partir des infos de l'étudiant.
+    # Construire le contenu du QR
+    contenu = qr.qr_data
     if not contenu:
-        etudiant = await etudiant_repo.trouver_par_id(id_etudiant)
+        import json as _json
         infos = {
             "id_qrcode":   qr.id_qrcode,
-            "id_etudiant": qr.id_etudiant,
+            "id_etudiant": id_etudiant,
             "specialite":  qr.id_specialite,
             "niveau":      qr.niveau,
             "valide":      qr.valide_jusqua,
         }
         if etudiant:
-            infos["matricule"] = etudiant.matricule.valeur if hasattr(etudiant.matricule, "valeur") else str(etudiant.matricule)
+            infos["matricule"] = str(etudiant.matricule.valeur) if hasattr(etudiant.matricule, "valeur") else str(etudiant.matricule)
             infos["nom"]       = f"{etudiant.nom} {etudiant.prenom}"
-        import json as _json
         contenu = _json.dumps(infos, ensure_ascii=False)
 
-    image_bytes = _qr_data_vers_png(contenu, id_etudiant)
+    # Générer l'image QR avec photo intégrée si disponible
+    photo_data = e_modele.photo if e_modele else None
+    image_bytes = _generer_qr_avec_photo(contenu, id_etudiant, photo_data, etudiant)
     return Response(content=image_bytes, media_type="image/png")
+
+
+def _generer_qr_avec_photo(contenu: str, id_etudiant: str, photo_data: str | None, etudiant) -> bytes:
+    """
+    Génère un QR code enrichi :
+    - Si l'étudiant a une photo → la photo apparaît au centre du QR
+    - Sinon → QR code simple
+    Utilise Pillow (PIL) pour la composition d'images.
+    """
+    import io, base64 as _b64
+    try:
+        import qrcode
+        from qrcode.image.styledpil import StyledPilImage
+        from qrcode.image.styles.moduledrawers.pil import RoundedModuleDrawer
+        from PIL import Image, ImageDraw, ImageFont, ImageOps
+    except ImportError:
+        return _qr_data_vers_png(contenu, id_etudiant)
+
+    # 1. Générer le QR code de base
+    niveau_correction = qrcode.constants.ERROR_CORRECT_H if photo_data else qrcode.constants.ERROR_CORRECT_M
+    qr = qrcode.QRCode(
+        version          = 1,
+        error_correction = niveau_correction,
+        box_size         = 10,
+        border           = 4,
+    )
+    qr.add_data(contenu)
+    qr.make(fit=True)
+
+    qr_img = qr.make_image(fill_color="#1a1a2e", back_color="white").convert("RGB")
+    qr_size = qr_img.size[0]
+
+    if photo_data:
+        try:
+            # 2. Décoder la photo de l'étudiant
+            if "," in photo_data:
+                photo_b64 = photo_data.split(",", 1)[1]
+            else:
+                photo_b64 = photo_data
+            photo_bytes = _b64.b64decode(photo_b64)
+            photo_img   = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+
+            # 3. Rogner en cercle et redimensionner (20% du QR)
+            logo_size = int(qr_size * 0.22)
+            photo_img = photo_img.resize((logo_size, logo_size), Image.LANCZOS)
+
+            # Masque circulaire
+            masque = Image.new("L", (logo_size, logo_size), 0)
+            draw   = ImageDraw.Draw(masque)
+            draw.ellipse((0, 0, logo_size, logo_size), fill=255)
+
+            # Fond blanc rond derrière la photo
+            fond_blanc = Image.new("RGB", (logo_size + 8, logo_size + 8), "white")
+            fond_pos   = ((qr_size - logo_size - 8) // 2, (qr_size - logo_size - 8) // 2)
+            qr_img.paste(fond_blanc, fond_pos)
+
+            # Coller la photo au centre
+            photo_rgba = Image.new("RGBA", photo_img.size)
+            photo_rgba.paste(photo_img)
+            photo_rgba.putalpha(masque)
+
+            pos = ((qr_size - logo_size) // 2, (qr_size - logo_size) // 2)
+            qr_img.paste(photo_img, pos, masque)
+
+        except Exception:
+            pass  # Si erreur avec la photo → QR simple
+
+    # 4. Créer une image finale avec infos étudiant en bas
+    marge     = 20
+    info_h    = 60
+    total_h   = qr_size + info_h + marge
+    finale    = Image.new("RGB", (qr_size, total_h), "white")
+    finale.paste(qr_img, (0, 0))
+
+    draw = ImageDraw.Draw(finale)
+    # Ligne de séparation
+    draw.line([(marge, qr_size + 5), (qr_size - marge, qr_size + 5)], fill="#e0e0e0", width=1)
+
+    # Texte infos étudiant
+    if etudiant:
+        nom_complet = f"{etudiant.prenom} {etudiant.nom}" if etudiant else ""
+        try:
+            mat = etudiant.matricule.valeur if hasattr(etudiant.matricule, "valeur") else str(etudiant.matricule)
+        except:
+            mat = ""
+        draw.text((qr_size // 2, qr_size + 18), nom_complet, fill="#1a1a2e", anchor="mm")
+        draw.text((qr_size // 2, qr_size + 38), mat, fill="#666666", anchor="mm")
+
+    buf = io.BytesIO()
+    finale.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def _qr_data_vers_png(qr_data: str, id_etudiant: str) -> bytes:
