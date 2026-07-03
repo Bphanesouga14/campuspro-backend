@@ -235,3 +235,112 @@ async def info_apres_scan(
             "photo":            etudiant.photo,  # data URL base64 ou null
         }
     }
+
+#Route pour obtenir les statistiques globales des présences
+
+@router.get("/absences/stats", summary="Statistiques globales des présences")
+async def stats_presences(
+    db = Depends(get_db),
+    _: UtilisateurDomaine = Depends(get_current_user),
+):
+    """
+    Retourne les statistiques de présence pour tous les étudiants.
+    Utilisé pour le tableau de bord des absences.
+    """
+    from sqlalchemy import select, func
+    from app.Infrastructure.database.models import Etudiant
+
+    # Total de séances enregistrées (nb de scans distincts par date)
+    res_total = await db.execute(
+        select(func.count(func.distinct(
+            func.date_trunc("day", Presence.date_scan)
+        )))
+    )
+    total_seances = res_total.scalar() or 0
+
+    # Présences par étudiant
+    res = await db.execute(
+        select(
+            Presence.id_etudiant,
+            func.count(Presence.id).label("nb_presences"),
+        )
+        .group_by(Presence.id_etudiant)
+    )
+    presences_par_etudiant = {row.id_etudiant: row.nb_presences for row in res.all()}
+
+    # Récupérer tous les étudiants
+    res_et = await db.execute(select(Etudiant))
+    etudiants = res_et.scalars().all()
+
+    stats = []
+    for e in etudiants:
+        nb_presences = presences_par_etudiant.get(e.id_etudiant, 0)
+        nb_absences  = max(0, total_seances - nb_presences)
+        taux = round(nb_presences / total_seances * 100, 1) if total_seances > 0 else 0
+
+        stats.append({
+            "id_etudiant":   e.id_etudiant,
+            "nom":           e.nom,
+            "prenom":        e.prenom,
+            "nom_complet":   f"{e.prenom} {e.nom}",
+            "matricule":     e.matricule,
+            "specialite":    e.code_specialite,
+            "niveau":        e.niveau,
+            "nb_presences":  nb_presences,
+            "nb_absences":   nb_absences,
+            "total_seances": total_seances,
+            "taux_presence": taux,
+            "alerte":        taux < 75 and total_seances > 0,
+        })
+
+    # Trier : les plus absents en premier
+    stats.sort(key=lambda x: x["taux_presence"])
+
+    return {
+        "total_seances":   total_seances,
+        "total_etudiants": len(etudiants),
+        "en_alerte":       sum(1 for s in stats if s["alerte"]),
+        "etudiants":       stats,
+    }
+
+
+
+# Route pour obtenir le détail des absences d'un étudiant
+
+@router.get("/absences/{id_etudiant}", summary="Détail absences d'un étudiant")
+async def absences_etudiant(
+    id_etudiant: str,
+    db = Depends(get_db),
+    _: UtilisateurDomaine = Depends(get_current_user),
+):
+    """Retourne le détail des présences et absences d'un étudiant."""
+    from app.Infrastructure.database.models import Etudiant
+
+    e = await db.get(Etudiant, id_etudiant)
+    if not e:
+        raise HTTPException(status_code=404, detail="Étudiant introuvable.")
+
+    res = await db.execute(
+        select(Presence)
+        .where(Presence.id_etudiant == id_etudiant)
+        .order_by(Presence.date_scan.desc())
+    )
+    presences = res.scalars().all()
+
+    return {
+        "id_etudiant":  id_etudiant,
+        "nom_complet":  f"{e.prenom} {e.nom}",
+        "matricule":    e.matricule,
+        "specialite":   e.code_specialite,
+        "presences": [
+            {
+                "id":       p.id,
+                "date":     p.date_scan.strftime("%d/%m/%Y"),
+                "heure":    p.date_scan.strftime("%H:%M"),
+                "cours":    p.cours or "—",
+                "valide":   p.valide,
+            }
+            for p in presences
+        ],
+        "total_presences": len(presences),
+    }

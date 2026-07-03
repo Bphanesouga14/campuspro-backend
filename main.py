@@ -24,6 +24,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Configuration de l'application
+
 from app.core.config import settings
 
 # Création des tables au démarrage
@@ -48,6 +49,12 @@ from app.Presentation.routes.presence_routes import router as presence_router
 
 
 from app.Presentation.routes.auth_2fa_routes import router as auth_2fa_router
+
+# Configurer le scheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from app.Infrastructure.services.relance_service import envoyer_relances
+from app.Infrastructure.database.session import AsyncSessionLocal
 
 
 # ============================================================
@@ -75,10 +82,30 @@ async def lifespan(app: FastAPI):
     # selon disponibilité (voir app/Infrastructure/database/session.py)
     await initialiser_base_de_donnees()
 
-    # L'application tourne pendant ce yield
+
+
+    async def job_relances():
+        """Tâche planifiée : envoyer les relances chaque soir."""
+        print("\n⏰ Lancement des relances automatiques...")
+        async with AsyncSessionLocal() as db:
+            resultat = await envoyer_relances(db)
+        print(f"✅ Relances terminées : {resultat['envoyes']} envoyées, {resultat['erreurs']} erreurs")
+
+    scheduler = AsyncIOScheduler(timezone="Africa/Douala")
+    scheduler.add_job(
+        job_relances,
+        CronTrigger(hour=20, minute=0),   # Chaque jour à 20h00
+        id          = "relances_paiements",
+        name        = "Relances paiements en retard",
+        replace_existing = True,
+    )
+    scheduler.start()
+    print("✅ Scheduler démarré — relances chaque jour à 20h00")
+
     yield
 
     # ── À l'arrêt ─────────────────────────────────────────
+    scheduler.shutdown()
     if db_session.engine:
         await db_session.engine.dispose()
     print("👋 Arrêt de CampusPro.")

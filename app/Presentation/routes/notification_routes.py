@@ -7,11 +7,35 @@ from app.Infrastructure.database.session import get_db
 from app.Infrastructure.database.models import (
     Notification, Etudiant, TypeNotifEnum
 )
-from app.Presentation.security import get_current_user
+from app.Presentation.security import get_current_user, require_roles
 from app.Domain.entities import UtilisateurDomaine
 from app.Domain.value_objects import RoleUtilisateur
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
+
+
+
+
+@router.post("/relances/lancer", summary="Lancer les relances manuellement (admin)")
+async def lancer_relances_manuellement(
+    utilisateur: UtilisateurDomaine = Depends(
+        require_roles(RoleUtilisateur.ADMIN)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Permet à l'admin de lancer les relances sans attendre 20h00.
+    Utile pour tester ou en cas d'urgence.
+    """
+    from app.Infrastructure.services.relance_service import envoyer_relances
+    resultat = await envoyer_relances(db)
+    return {
+        "message":  f"{resultat['envoyes']} relance(s) envoyée(s)",
+        "details":  resultat,
+    }
+
+
+
 
 
 @router.get("/recentes")

@@ -13,6 +13,10 @@
 #  COUCHE : Présentation
 # ============================================================
 
+
+from fastapi.responses import StreamingResponse
+import io
+
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -56,6 +60,80 @@ router = APIRouter(tags=["Paiements & QR Codes"])
 #  ROUTE 1 : Enregistrer un versement physique
 #  POST /api/v1/paiements/{id_paiement}/payer
 # ============================================================
+
+
+
+@router.get(
+    "/paiements/{id_paiement}/recu",
+    summary="Télécharger le reçu PDF d'un paiement",
+)
+async def telecharger_recu(
+    id_paiement: str,
+    db = Depends(get_db),
+    _: UtilisateurDomaine = Depends(get_current_user),
+):
+    """
+    Génère et retourne le reçu PDF d'un paiement.
+    Appelé par le frontend avec un lien de téléchargement direct.
+    """
+    from app.Infrastructure.database.models import (
+        Paiement as PModele, Etudiant as EModele
+    )
+    from app.Infrastructure.services.pdf_service import generer_recu_pdf
+
+        # Récupérer le paiement
+    p = await db.get(PModele, id_paiement)
+    if not p:
+        raise HTTPException(status_code=404, detail="Paiement introuvable.")
+
+    if p.montant_paye == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Aucun versement enregistré pour ce paiement."
+        )
+
+    # Récupérer l'étudiant
+    e = await db.get(EModele, p.id_etudiant)
+    nom = f"{e.prenom} {e.nom}" if e else p.id_etudiant
+    mat = str(e.matricule) if e else ""
+
+    # Date de paiement — peut être None ou un objet date
+    date_pai = "—"
+    if p.date_paiement:
+        if hasattr(p.date_paiement, "strftime"):
+            date_pai = p.date_paiement.strftime("%d/%m/%Y")
+        else:
+            date_pai = str(p.date_paiement)
+
+    # Montant payé — peut être None
+    montant_paye = int(p.montant_paye or 0)
+    montant_attendu = int(p.montant_attendu or 0)
+
+    # Générer le PDF
+    pdf_bytes = generer_recu_pdf(
+        etudiant_nom    = nom,
+        etudiant_mat    = mat,
+        specialite      = str(p.id_specialite or ""),
+        niveau          = int(p.niveau or 1),
+        numero_tranche  = int(p.numero_tranche or 1),
+        montant_attendu = montant_attendu,
+        montant_paye    = montant_paye,
+        date_paiement   = date_pai,
+        id_paiement     = id_paiement,
+    )
+    nom_fichier = f"Recu_{mat}_{id_paiement}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={nom_fichier}"
+        }
+    )
+
+
+
+
+
 @router.post(
     "/paiements/{id_paiement}/payer",
     response_model=PaiementReponseDTO,
@@ -146,6 +224,10 @@ async def paiements_en_retard(
     # Pas d'exception possible ici → on retourne simplement la liste
     # (peut être vide si aucun retard)
     return await use_case.executer()
+
+
+
+
 
 
 # ============================================================
