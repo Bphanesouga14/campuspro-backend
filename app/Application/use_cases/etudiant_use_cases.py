@@ -86,6 +86,7 @@ def _domaine_vers_reponse(etudiant: EtudiantDomaine) -> EtudiantReponseDTO:
         total_annuel_attendu = float(etudiant.total_annuel_attendu.valeur),
         reste_global         = float(etudiant.reste_global.valeur),
         est_a_jour           = etudiant.est_a_jour,
+        photo                = getattr(etudiant, "photo", None),   # ← AJOUTER
     )
 
 

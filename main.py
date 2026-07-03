@@ -47,6 +47,9 @@ from app.Presentation.routes.etudiant_photo_routes import router as photo_router
 from app.Presentation.routes.presence_routes import router as presence_router
 
 
+from app.Presentation.routes.auth_2fa_routes import router as auth_2fa_router
+
+
 # ============================================================
 #  LIFESPAN — Cycle de vie de l'application
 # ============================================================
@@ -152,17 +155,22 @@ enregistrer_handlers(app)
 # prefix="/api/v1" → toutes les routes commencent par /api/v1
 # Exemple : /api/v1/etudiants, /api/v1/paiements/retards
 
+
+app.include_router(auth_2fa_router, prefix="/api/v1")  # ← EN PREMIER
+app.include_router(auth_router,     prefix="/api/v1")  # ← EN SECOND
+
 app.include_router(etudiant_router, prefix="/api/v1")
 app.include_router(paiement_router, prefix="/api/v1")
 app.include_router(import_router,   prefix="/api/v1")
 app.include_router(specialite_router, prefix="/api/v1")
 app.include_router(calendrier_router, prefix="/api/v1")
 app.include_router(dashboard_router,  prefix="/api/v1")
-app.include_router(auth_router,         prefix="/api/v1")
 app.include_router(notification_router, prefix="/api/v1")
 app.include_router(profil_router,       prefix="/api/v1")
 app.include_router(photo_router,        prefix="/api/v1")
 app.include_router(presence_router,     prefix="/api/v1")
+
+
 
 
 # ============================================================

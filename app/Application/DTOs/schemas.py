@@ -156,17 +156,18 @@ class EtudiantReponseDTO(BaseModel):
     code_specialite: str
     niveau: int
     annee_academique: str
-    email_etudiant: Optional[str]
-    telephone_etudiant: Optional[str]
+    email_etudiant: Optional[str] = None
+    telephone_etudiant: Optional[str] = None
     nom_parent: str
     prenom_parent: str
     lien_parent: str
     telephone_parent: str
-    email_parent: Optional[str]
+    email_parent: Optional[str] = None
     cumul_verse: float
     total_annuel_attendu: float
     reste_global: float
     est_a_jour: bool
+    photo:              Optional[str] = None   # ← AJOUTER cette ligne
     model_config = {"from_attributes": True}
 
 
@@ -299,6 +300,7 @@ class UtilisateurReponseDTO(BaseModel):
     nom: str
     role: str
     actif: bool
+    photo: Optional[str] = None   # ← ajouter ici
     model_config = {"from_attributes": True}
 
 

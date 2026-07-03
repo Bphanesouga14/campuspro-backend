@@ -22,36 +22,6 @@
 #  COUCHE : Infrastructure
 # ============================================================
 
-
-
-
-
-"""Ajout colonne photo dans utilisateurs"""
-
-from alembic import op
-import sqlalchemy as sa
-
-# Identifiants de migration (remplace par ceux générés automatiquement si besoin)
-revision = "20260702_add_photo_column"
-down_revision = "xxxx_previous_revision"  # mets l'ID de ta migration précédente
-branch_labels = None
-depends_on = None
-
-def upgrade():
-    op.add_column(
-        "utilisateurs",
-        sa.Column("photo", sa.Text(), nullable=True)
-    )
-
-def downgrade():
-    op.drop_column("utilisateurs", "photo")
-
-
-
-
-
-
-
 from decimal import Decimal
 
 # Modèles SQLAlchemy (objets liés à la base de données)
@@ -179,6 +149,7 @@ def etudiant_modele_vers_domaine(m: EtudiantModele) -> EtudiantDomaine:
         lien_parent        = LienParent(m.lien_parent.value if hasattr(m.lien_parent, 'value') else m.lien_parent),
         telephone_parent   = Telephone(m.telephone_parent) if m.telephone_parent else None,
         email_parent       = Email(m.email_parent) if m.email_parent else None,
+        photo              = m.photo,   # ← ajouter ici
         # Les paiements sont chargés séparément (pas dans ce mapper)
         paiements          = [],
     )

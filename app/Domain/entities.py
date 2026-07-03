@@ -125,6 +125,7 @@ class EtudiantDomaine:
     telephone_parent: Optional[Telephone] = None
     email_parent: Optional[Email] = None
     paiements: List[PaiementDomaine] = field(default_factory=list)
+    photo: Optional[str] = None   # ← AJOUTER
 
     @property
     def nom_complet(self) -> str:
@@ -237,6 +238,7 @@ class UtilisateurDomaine:
     role: RoleUtilisateur
     actif: bool = True
     created_at: Optional[str] = None
+    photo: Optional[str] = None   # ← ajouter ici
 
     def a_le_role(self, *roles: RoleUtilisateur) -> bool:
         """Vérifie si l'utilisateur a un des rôles donnés."""

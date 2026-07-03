@@ -479,3 +479,22 @@ class Utilisateur(Base):
     photo = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+
+
+
+
+class CodeAuthentification(Base):
+    """
+    Codes 2FA temporaires envoyés par email lors de la connexion.
+    Expirés après 10 minutes, supprimés après utilisation.
+    """
+    __tablename__ = "codes_auth"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    id_utilisateur  = Column(String(20), ForeignKey("utilisateurs.id_utilisateur"), nullable=False)
+    code            = Column(String(6), nullable=False)
+    expire_a        = Column(DateTime, nullable=False)
+    utilise         = Column(Boolean, default=False)
+    created_at      = Column(DateTime, default=datetime.utcnow)

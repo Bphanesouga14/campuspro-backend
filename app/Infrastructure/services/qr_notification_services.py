@@ -160,39 +160,53 @@ class NotificationServiceImpl(INotificationService):
             print(f"[ERREUR EMAIL] {e}")
             return False
 
+    
     @staticmethod
     def _envoyer_email_sync(destinataire: str, sujet: str, message: str) -> bool:
-        """
-        Partie BLOQUANTE de l'envoi d'email (smtplib est synchrone).
-        Exécutée dans un thread séparé via asyncio.to_thread() pour ne
-        jamais bloquer la boucle d'événements asyncio de FastAPI.
-        """
-        # ── Construire le message email ──────────────────
-        # MIMEMultipart = email avec plusieurs parties (texte + HTML possible)
+        """Envoi email via SMTP Gmail."""
+        if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+            print(f"[EMAIL SIMULÉ] À: {destinataire}\nSujet: {sujet}\n{message}")
+            return True  # Mode simulation si pas de config
+
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        import smtplib
+
         email = MIMEMultipart("alternative")
         email["Subject"] = sujet
-        email["From"]    = settings.SMTP_USER
+        email["From"]    = f"CampusPro <{settings.SMTP_USER}>"
         email["To"]      = destinataire
 
-        # Partie texte brut (pour les clients mail qui ne supportent pas HTML)
+        # Version texte
         partie_texte = MIMEText(message, "plain", "utf-8")
+        # Version HTML
+        html = f"""
+        <html><body style="font-family:Arial,sans-serif;max-width:600px;margin:auto;">
+        <div style="background:#1a3a5c;padding:20px;border-radius:10px 10px 0 0;">
+            <h1 style="color:white;margin:0;">🎓 CampusPro</h1>
+        </div>
+        <div style="padding:20px;border:1px solid #e0e0e0;border-radius:0 0 10px 10px;">
+            <p style="color:#333;line-height:1.6;">{message.replace(chr(10), '<br>')}</p>
+            <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
+            <p style="color:#999;font-size:12px;">
+            CampusPro — Gestion scolaire intelligente<br>
+            © {__import__('datetime').datetime.now().year} Tous droits réservés
+            </p>
+        </div>
+        </body></html>
+        """
+        partie_html = MIMEText(html, "html", "utf-8")
         email.attach(partie_texte)
+        email.attach(partie_html)
 
-        # ── Envoyer via SMTP ─────────────────────────────
-        # smtplib.SMTP avec starttls = port 587
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as serveur:
-            # starttls() = démarre le chiffrement de la connexion
             serveur.starttls()
-            # login() = authentification
             serveur.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            # sendmail() = envoie l'email
-            serveur.sendmail(
-                settings.SMTP_USER,
-                destinataire,
-                email.as_string()
-            )
+            serveur.sendmail(settings.SMTP_USER, destinataire, email.as_string())
 
-        return True  # Succès
+        print(f"[EMAIL ENVOYÉ] À: {destinataire} | Sujet: {sujet}")
+        return True
+
 
     async def envoyer_sms(
         self,

@@ -165,3 +165,73 @@ async def toutes_presences(
         }
         for p, nom, prenom in rows
     ]
+
+
+
+@router.get("/info-qr/{id_qrcode}", summary="Infos complètes après scan QR")
+async def info_apres_scan(
+    id_qrcode: str,
+    db = Depends(get_db),
+):
+    """
+    Appelé par Flutter immédiatement après le scan du QR code.
+    Retourne toutes les infos de l'étudiant + sa photo.
+    
+    Cette route est PUBLIQUE (pas de token requis) pour que
+    l'app mobile puisse l'appeler sans authentification.
+    
+    Réponse :
+    {
+      "id_qrcode": "QR-001",
+      "statut_qr": "ACTIF",
+      "valide_jusqua": "30/09/2025",
+      "etudiant": {
+        "id": "ETU-2024-001",
+        "nom": "MBARGA Jean",
+        "matricule": "MAT-2024-INFO-001",
+        "specialite": "INFO1",
+        "niveau": 1,
+        "annee_academique": "2024-2025",
+        "photo": "data:image/jpeg;base64,..."
+      }
+    }
+    """
+    from sqlalchemy import select
+    from app.Infrastructure.database.models import QRCode, Etudiant
+
+    # 1. Récupérer le QR code
+    qr = await db.get(QRCode, id_qrcode)
+    if not qr:
+        raise HTTPException(
+            status_code=404,
+            detail=f"QR code '{id_qrcode}' introuvable."
+        )
+
+    # 2. Récupérer l'étudiant lié
+    etudiant = await db.get(Etudiant, qr.id_etudiant)
+    if not etudiant:
+        raise HTTPException(
+            status_code=404,
+            detail="Étudiant lié à ce QR code introuvable."
+        )
+
+    return {
+        "id_qrcode":    qr.id_qrcode,
+        "statut_qr":    qr.statut.value if hasattr(qr.statut, "value") else str(qr.statut),
+        "valide_jusqua": qr.valide_jusqua,
+        "etudiant": {
+            "id":               etudiant.id_etudiant,
+            "nom":              etudiant.nom,
+            "prenom":           etudiant.prenom,
+            "nom_complet":      f"{etudiant.prenom} {etudiant.nom}",
+            "matricule":        etudiant.matricule,
+            "specialite":       etudiant.code_specialite,
+            "departement":      etudiant.id_specialite,
+            "niveau":           etudiant.niveau,
+            "annee_academique": etudiant.annee_academique,
+            "sexe":             etudiant.sexe.value if hasattr(etudiant.sexe, "value") else str(etudiant.sexe),
+            "telephone":        etudiant.telephone_etudiant,
+            "email":            etudiant.email_etudiant,
+            "photo":            etudiant.photo,  # data URL base64 ou null
+        }
+    }

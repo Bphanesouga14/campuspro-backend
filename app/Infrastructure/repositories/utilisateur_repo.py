@@ -29,6 +29,7 @@ def _modele_vers_domaine(m: UtilisateurModele) -> UtilisateurDomaine:
         role              = RoleUtilisateur(m.role.value if hasattr(m.role, "value") else m.role),
         actif             = m.actif,
         created_at        = m.created_at.isoformat() if m.created_at else None,
+        photo             = getattr(m, "photo", None),   # ← ajouter ici
     )
 
 
