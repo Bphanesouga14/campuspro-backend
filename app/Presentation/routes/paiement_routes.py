@@ -475,3 +475,52 @@ def _qr_data_vers_png(qr_data: str, id_etudiant: str) -> bytes:
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail      = f"Impossible de générer l'image QR : {e}",
         )
+    
+
+
+@router.get(
+    "/etudiants/{id_etudiant}/carte",
+    summary="Générer la carte étudiant PDF",
+)
+async def telecharger_carte_etudiant(
+    id_etudiant: str,
+    db = Depends(get_db),
+    _: UtilisateurDomaine = Depends(get_current_user),
+):
+    """
+    Génère et télécharge la carte étudiant PDF.
+    Contient : photo, nom, matricule, spécialité,
+    niveau, QR code recto/verso.
+    """
+    from app.Infrastructure.database.models import Etudiant as EModele
+    from app.Infrastructure.services.carte_etudiant_service import (
+        generer_carte_etudiant_pdf
+    )
+
+    e = await db.get(EModele, id_etudiant)
+    if not e:
+        raise HTTPException(status_code=404, detail="Étudiant introuvable.")
+
+    try:
+        pdf_bytes = generer_carte_etudiant_pdf(
+            id_etudiant = e.id_etudiant,
+            nom         = e.nom,
+            prenom      = e.prenom,
+            matricule   = str(e.matricule),
+            specialite  = str(e.code_specialite),
+            niveau      = int(e.niveau),
+            annee       = str(e.annee_academique),
+            photo_data  = getattr(e, "photo", None),
+        )
+    except Exception as ex:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur génération carte : {str(ex)}"
+        )
+
+    nom_fichier = f"Carte_{e.matricule}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={nom_fichier}"}
+    )
