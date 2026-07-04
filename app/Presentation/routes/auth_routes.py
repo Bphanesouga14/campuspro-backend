@@ -41,6 +41,7 @@ from app.Presentation.dependencies import (
     get_connexion_uc,
     get_creer_utilisateur_uc,
     get_lister_utilisateurs_uc,
+    get_utilisateur_repo,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentification"])
@@ -113,3 +114,63 @@ async def lister_utilisateurs(
     _admin: UtilisateurDomaine = Depends(require_roles(RoleUtilisateur.ADMIN)),
 ):
     return await use_case.executer()
+
+
+@router.put(
+    "/utilisateurs/{id_utilisateur}",
+    response_model=UtilisateurReponseDTO,
+    summary="Modifier un compte utilisateur (admin uniquement)",
+)
+async def modifier_utilisateur(
+    id_utilisateur: str,
+    dto: UtilisateurCreerDTO,
+    repo = Depends(get_utilisateur_repo),
+    _admin: UtilisateurDomaine = Depends(require_roles(RoleUtilisateur.ADMIN)),
+):
+    from app.Infrastructure.repositories.utilisateur_repo import SQLAlchemyUtilisateurRepository
+    from app.Infrastructure.security.mot_de_passe import hasher_mot_de_passe
+    from app.Domain.value_objects import RoleUtilisateur as RoleEnum2
+
+    utilisateur = await repo.trouver_par_id(id_utilisateur)
+    if not utilisateur:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Utilisateur '{id_utilisateur}' introuvable.")
+
+    utilisateur.email = dto.email
+    utilisateur.nom   = dto.nom
+    utilisateur.role  = RoleEnum2(dto.role)
+    if hasattr(dto, "mot_de_passe") and dto.mot_de_passe:
+        utilisateur.mot_de_passe_hash = hasher_mot_de_passe(dto.mot_de_passe)
+
+    sauvegarde = await repo.sauvegarder(utilisateur)
+    return UtilisateurReponseDTO(
+        id_utilisateur = sauvegarde.id_utilisateur,
+        email          = sauvegarde.email,
+        nom            = sauvegarde.nom,
+        role           = sauvegarde.role.value,
+        actif          = sauvegarde.actif,
+    )
+
+
+@router.delete(
+    "/utilisateurs/{id_utilisateur}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Supprimer un compte utilisateur (admin uniquement)",
+)
+async def supprimer_utilisateur(
+    id_utilisateur: str,
+    repo = Depends(get_utilisateur_repo),
+    utilisateur_connecte: UtilisateurDomaine = Depends(require_roles(RoleUtilisateur.ADMIN)),
+):
+    if id_utilisateur == utilisateur_connecte.id_utilisateur:
+        raise HTTPException(
+            status_code = status.HTTP_400_BAD_REQUEST,
+            detail      = "Vous ne pouvez pas supprimer votre propre compte."
+        )
+    utilisateur = await repo.trouver_par_id(id_utilisateur)
+    if not utilisateur:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Utilisateur '{id_utilisateur}' introuvable.")
+
+    from sqlalchemy import delete as sql_delete
+    from app.Infrastructure.database.models import Utilisateur as UtilisateurModele
+    await repo._db.execute(sql_delete(UtilisateurModele).where(UtilisateurModele.id_utilisateur == id_utilisateur))
+    await repo._db.flush()

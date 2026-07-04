@@ -36,6 +36,7 @@ def _vers_dto(u: UtilisateurDomaine) -> UtilisateurReponseDTO:
         nom            = u.nom,
         role           = u.role.value,
         actif          = u.actif,
+        photo          = getattr(u, "photo", None),   # ← ajouter ici
     )
 
 

@@ -40,7 +40,7 @@ from app.Domain.value_objects import RoleUtilisateur
 
 async def main():
     print("=" * 60)
-    print("  LGS — Création du compte administrateur")
+    print("  CampusPro — Création du compte administrateur")
     print("=" * 60)
     print()
 

@@ -1,16 +1,4 @@
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.get("/")
-def lire_racine():
-    return {"Bienvenue": "Bienvenue sur mon API FastAPI!"}
-
-
-
-
-
-    # ============================================================
+# ============================================================
 #  FICHIER : main.py
 #
 #  RÔLE : Point d'entrée de l'application FastAPI.
@@ -36,6 +24,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Configuration de l'application
+
 from app.core.config import settings
 
 # Création des tables au démarrage
@@ -53,6 +42,19 @@ from app.Presentation.routes.specialite_routes import router as specialite_route
 from app.Presentation.routes.calendrier_routes import router as calendrier_router
 from app.Presentation.routes.dashboard_routes import router as dashboard_router
 from app.Presentation.routes.auth_routes import router as auth_router
+from app.Presentation.routes.notification_routes import router as notification_router
+from app.Presentation.routes.profil_routes import router as profil_router
+from app.Presentation.routes.etudiant_photo_routes import router as photo_router
+from app.Presentation.routes.presence_routes import router as presence_router
+
+
+from app.Presentation.routes.auth_2fa_routes import router as auth_2fa_router
+
+# Configurer le scheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from app.Infrastructure.services.relance_service import envoyer_relances
+from app.Infrastructure.database.session import AsyncSessionLocal
 
 
 # ============================================================
@@ -74,19 +76,39 @@ async def lifespan(app: FastAPI):
         fermer la boutique le soir
     """
     # ── Au démarrage ──────────────────────────────────────
-    print("🚀 Démarrage de LGS...")
+    print("🚀 Démarrage de CampusPro...")
 
     # Connexion automatique à Supabase OU PostgreSQL local
     # selon disponibilité (voir app/Infrastructure/database/session.py)
     await initialiser_base_de_donnees()
 
-    # L'application tourne pendant ce yield
+
+
+    async def job_relances():
+        """Tâche planifiée : envoyer les relances chaque soir."""
+        print("\n⏰ Lancement des relances automatiques...")
+        async with AsyncSessionLocal() as db:
+            resultat = await envoyer_relances(db)
+        print(f"✅ Relances terminées : {resultat['envoyes']} envoyées, {resultat['erreurs']} erreurs")
+
+    scheduler = AsyncIOScheduler(timezone="Africa/Douala")
+    scheduler.add_job(
+        job_relances,
+        CronTrigger(hour=20, minute=0),   # Chaque jour à 20h00
+        id          = "relances_paiements",
+        name        = "Relances paiements en retard",
+        replace_existing = True,
+    )
+    scheduler.start()
+    print("✅ Scheduler démarré — relances chaque jour à 20h00")
+
     yield
 
     # ── À l'arrêt ─────────────────────────────────────────
+    scheduler.shutdown()
     if db_session.engine:
         await db_session.engine.dispose()
-    print("👋 Arrêt de LGS.")
+    print("👋 Arrêt de CampusPro.")
 
 
 # ============================================================
@@ -136,13 +158,12 @@ Ce projet suit la **Clean Architecture** avec 4 couches :
 # qui appelle l'API sur localhost:8000).
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins = liste des domaines autorisés à appeler l'API
-    allow_origins     = settings.ALLOWED_ORIGINS,
-    # allow_credentials = autoriser les cookies et headers d'auth
-    allow_credentials = True,
-    # allow_methods = méthodes HTTP autorisées
+    # En développement : on autorise toutes les origines pour éviter
+    # les problèmes CORS. En production, remplacer "*" par la liste
+    # des domaines autorisés.
+    allow_origins     = ["*"],
+    allow_credentials = False,   # False obligatoire avec allow_origins="*"
     allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    # allow_headers = headers HTTP autorisés
     allow_headers     = ["*"],
 )
 
@@ -161,13 +182,22 @@ enregistrer_handlers(app)
 # prefix="/api/v1" → toutes les routes commencent par /api/v1
 # Exemple : /api/v1/etudiants, /api/v1/paiements/retards
 
+
+app.include_router(auth_2fa_router, prefix="/api/v1")  # ← EN PREMIER
+app.include_router(auth_router,     prefix="/api/v1")  # ← EN SECOND
+
 app.include_router(etudiant_router, prefix="/api/v1")
 app.include_router(paiement_router, prefix="/api/v1")
 app.include_router(import_router,   prefix="/api/v1")
 app.include_router(specialite_router, prefix="/api/v1")
 app.include_router(calendrier_router, prefix="/api/v1")
 app.include_router(dashboard_router,  prefix="/api/v1")
-app.include_router(auth_router,       prefix="/api/v1")
+app.include_router(notification_router, prefix="/api/v1")
+app.include_router(profil_router,       prefix="/api/v1")
+app.include_router(photo_router,        prefix="/api/v1")
+app.include_router(presence_router,     prefix="/api/v1")
+
+
 
 
 # ============================================================

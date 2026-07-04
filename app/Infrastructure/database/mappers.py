@@ -149,6 +149,7 @@ def etudiant_modele_vers_domaine(m: EtudiantModele) -> EtudiantDomaine:
         lien_parent        = LienParent(m.lien_parent.value if hasattr(m.lien_parent, 'value') else m.lien_parent),
         telephone_parent   = Telephone(m.telephone_parent) if m.telephone_parent else None,
         email_parent       = Email(m.email_parent) if m.email_parent else None,
+        photo              = m.photo,   # ← ajouter ici
         # Les paiements sont chargés séparément (pas dans ce mapper)
         paiements          = [],
     )
