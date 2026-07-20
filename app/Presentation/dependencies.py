@@ -88,9 +88,11 @@ def get_utilisateur_repo(db: AsyncSession = Depends(get_db)):
 # Chaque fonction assemble le use case avec ses repositories.
 
 def get_creer_etudiant_uc(
-    repo: SQLAlchemyEtudiantRepository = Depends(get_etudiant_repo),
+    etudiant_repo   = Depends(get_etudiant_repo),
+    specialite_repo = Depends(get_specialite_repo),
+    paiement_repo   = Depends(get_paiement_repo),
 ):
-    return CreerEtudiantUseCase(repo)
+    return CreerEtudiantUseCase(etudiant_repo, specialite_repo, paiement_repo)
 
 def get_trouver_etudiant_uc(
     etudiant_repo = Depends(get_etudiant_repo),

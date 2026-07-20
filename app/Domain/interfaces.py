@@ -198,6 +198,10 @@ class IQRCodeRepository(ABC):
         ...
 
     @abstractmethod
+    async def trouver_dernier_par_etudiant(self, id_etudiant: str) -> Optional[QRCodeDomaine]:
+        ...
+
+    @abstractmethod
     async def lister_par_etudiant(self, id_etudiant: str) -> List[QRCodeDomaine]:
         """Retourne tout l'historique des QR codes d'un étudiant."""
         ...

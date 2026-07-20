@@ -8,6 +8,7 @@ Flux :
 import random
 import string
 from datetime import datetime, timedelta, timezone
+datetime.now(timezone.utc)
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel

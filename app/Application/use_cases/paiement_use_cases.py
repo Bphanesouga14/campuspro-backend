@@ -150,7 +150,8 @@ class EnregistrerVersementUseCase:
 
             # Créer l'entité QRCodeDomaine
             # uuid.uuid4() génère un identifiant unique aléatoire
-            qr_id = f"QR-{etudiant.id_etudiant}-{str(uuid.uuid4())[:8].upper()}"
+            # APRÈS — format compact garanti sous 20 caractères
+            qr_id = f"QR-{str(uuid.uuid4())[:12].upper()}"
             qr_code = QRCodeDomaine(
                 id_qrcode       = qr_id,
                 id_etudiant     = etudiant.id_etudiant,

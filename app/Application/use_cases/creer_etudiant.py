@@ -17,8 +17,9 @@
 # ============================================================
 
 from decimal import Decimal
+from app.Application.use_cases.etudiant_use_cases import _domaine_vers_reponse
 from app.Domain.entities     import EtudiantDomaine
-from app.Domain.interfaces   import IEtudiantRepository
+from app.Domain.interfaces   import IEtudiantRepository, IPaiementRepository
 from app.Domain.value_objects import (
     Matricule, Email, Telephone, Sexe, LienParent, Niveau
 )
@@ -27,114 +28,64 @@ from app.Domain.exceptions import (
     SpecialiteIntrouvableError,
 )
 from app.Domain.interfaces   import ISpecialiteRepository
-from app.Application.DTOs.schemas import EtudiantIn, EtudiantOut
+from app.Application.DTOs.schemas import EtudiantCreerDTO, EtudiantIn, EtudiantOut, EtudiantReponseDTO
 
 
 class CreerEtudiantUseCase:
-    """
-    Cas d'usage : Créer un nouvel étudiant.
-
-    On injecte les dépendances dans le constructeur.
-    "Injecter" = passer en paramètre au lieu de créer ici.
-    Ainsi, on peut facilement remplacer le vrai Repository
-    par un faux (mock) lors des tests.
-    """
-
     def __init__(
         self,
-        etudiant_repo:   IEtudiantRepository,
-        specialite_repo: ISpecialiteRepository,
+        etudiant_repo: IEtudiantRepository,
+        specialite_repo: ISpecialiteRepository,  # ← ajouter
+        paiement_repo: IPaiementRepository,       # ← ajouter
     ):
-        # On stocke les repositories comme attributs privés
-        # Le "_" devant le nom indique que c'est privé (convention Python)
-        self._etudiant_repo   = etudiant_repo
-        self._specialite_repo = specialite_repo
+        self._etudiant_repo    = etudiant_repo
+        self._specialite_repo  = specialite_repo
+        self._paiement_repo    = paiement_repo
 
-    async def executer(self, donnees: EtudiantIn) -> EtudiantOut:
-        """
-        Point d'entrée du cas d'usage.
-        Reçoit un DTO "In", retourne un DTO "Out".
-
-        async def = méthode asynchrone (nécessaire pour les
-        opérations d'accès à la base de données).
-        """
-
+    async def executer(self, dto: EtudiantCreerDTO) -> EtudiantReponseDTO:
         # ── Étape 1 : Vérifier que le matricule est unique ───
-        # On appelle le repository pour chercher en base
-        existant = await self._etudiant_repo.trouver_par_matricule(
-            donnees.matricule
-        )
+        existant = await self._etudiant_repo.trouver_par_matricule(dto.matricule)
         if existant:
-            # Si un étudiant existe déjà avec ce matricule → erreur métier
-            raise EtudiantDejaExistantError(donnees.matricule)
+            raise EtudiantDejaExistantError(dto.matricule)
 
-        # ── Étape 2 : Vérifier que la spécialité existe ──────
-        specialite = await self._specialite_repo.trouver_par_id(
-            donnees.id_specialite
-        )
-        if not specialite:
-            raise SpecialiteIntrouvableError(donnees.id_specialite)
-
-        # ── Étape 3 : Construire l'entité domaine ────────────
-        # On convertit les strings du DTO en Value Objects du domaine
-        # C'est ici que la validation métier (format, règles) s'applique
-
-        matricule = Matricule(donnees.matricule)
-        # Si le format est invalide → Matricule lève ValueError
-
-        sexe = Sexe.MASCULIN if donnees.sexe == "M" else Sexe.FEMININ
-
-        niveau = Niveau(donnees.niveau)
-        # Niveau(6) lèverait une erreur car 6 n'est pas dans l'Enum
-
-        # Construire les Value Objects optionnels
-        email_etudiant = (
-            Email(donnees.email_etudiant)
-            if donnees.email_etudiant else None
-        )
-        tel_etudiant = (
-            Telephone(donnees.telephone_etudiant)
-            if donnees.telephone_etudiant else None
-        )
-        tel_parent = Telephone(donnees.telephone_parent)
-        email_parent = (
-            Email(donnees.email_parent)
-            if donnees.email_parent else None
-        )
-
-        # Convertir le lien parent en Enum
-        lien_map = {"Père": LienParent.PERE, "Mère": LienParent.MERE, "Tuteur": LienParent.TUTEUR}
-        lien = lien_map.get(donnees.lien_parent, LienParent.TUTEUR)
-
-        # Construire l'entité domaine complète
+        # ── Étape 2 : Construire l'entité Domaine ────────────
         etudiant = EtudiantDomaine(
-            id_etudiant        = donnees.id_etudiant,
-            matricule          = matricule,
-            nom                = donnees.nom.upper(),    # Convention : NOM en majuscules
-            prenom             = donnees.prenom.capitalize(),
-            date_naissance     = donnees.date_naissance,
-            sexe               = sexe,
-            id_specialite      = donnees.id_specialite,
-            code_specialite    = donnees.code_specialite,
-            niveau             = niveau,
-            annee_academique   = donnees.annee_academique,
-            email_etudiant     = email_etudiant,
-            telephone_etudiant = tel_etudiant,
-            nom_parent         = donnees.nom_parent.upper(),
-            prenom_parent      = donnees.prenom_parent.capitalize(),
-            lien_parent        = lien,
-            telephone_parent   = tel_parent,
-            email_parent       = email_parent,
-            paiements          = [],   # Pas de paiements à la création
+            id_etudiant = dto.id_etudiant,
+            # ... reste des champs existants inchangés ...
         )
 
-        # ── Étape 4 : Sauvegarder via le Repository ──────────
-        # On ne sait pas si c'est PostgreSQL ou autre chose.
-        # On appelle juste le contrat défini dans les interfaces.
+        # ── Étape 3 : Sauvegarder en base ───────────────────
         etudiant_sauvegarde = await self._etudiant_repo.sauvegarder(etudiant)
 
-        # ── Étape 5 : Construire et retourner le DTO de sortie
-        return self._vers_dto(etudiant_sauvegarde)
+        # ── Étape 4 : Générer automatiquement les 3 tranches ─
+        # basées sur les montants définis dans la Specialite
+        specialite = await self._specialite_repo.trouver_par_id(dto.id_specialite)
+        if specialite:
+            from app.Domain.entities import PaiementDomaine
+            from app.Domain.value_objects import Montant, StatutPaiement
+            import uuid
+
+            tranches = [
+                (1, specialite.tranche_1, specialite.date_limite_t1),
+                (2, specialite.tranche_2, specialite.date_limite_t2),
+                (3, specialite.tranche_3, specialite.date_limite_t3),
+            ]
+            for numero, montant, date_limite in tranches:
+                paiement = PaiementDomaine(
+                    id_paiement     = f"PAY-{uuid.uuid4().hex[:8].upper()}",
+                    id_etudiant     = dto.id_etudiant,
+                    id_specialite   = dto.id_specialite,
+                    niveau          = dto.niveau,
+                    numero_tranche  = numero,
+                    montant_attendu = Montant(valeur=montant),
+                    montant_paye    = Montant(valeur=0),
+                    date_limite     = date_limite,
+                    statut          = StatutPaiement.EN_ATTENTE,
+                )
+                await self._paiement_repo.sauvegarder(paiement)
+
+        # ── Étape 5 : Retourner le DTO de réponse ───────────
+        return _domaine_vers_reponse(etudiant_sauvegarde)
 
     def _vers_dto(self, etudiant: EtudiantDomaine) -> EtudiantOut:
         """

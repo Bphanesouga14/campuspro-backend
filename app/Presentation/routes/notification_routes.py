@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
@@ -18,6 +18,7 @@ router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 @router.post("/relances/lancer", summary="Lancer les relances manuellement (admin)")
 async def lancer_relances_manuellement(
+    background_tasks: BackgroundTasks, # 👈 1. Injecter BackgroundTasks
     utilisateur: UtilisateurDomaine = Depends(
         require_roles(RoleUtilisateur.ADMIN)
     ),
@@ -28,10 +29,17 @@ async def lancer_relances_manuellement(
     Utile pour tester ou en cas d'urgence.
     """
     from app.Infrastructure.services.relance_service import envoyer_relances
-    resultat = await envoyer_relances(db)
+
+    # ⚠️ Attention : Comme db (AsyncSession) est liée à la requête HTTP, 
+    # si la fonction de relance a besoin de faire des requêtes SQL en arrière-plan, 
+    # il est souvent préférable de laisser la fonction gérer sa propre session ou d'utiliser une tâche.
+    # Si 'envoyer_relances' crée sa propre session en interne, tu peux l'ajouter directement :
+    
+    background_tasks.add_task(envoyer_relances, db) # 👈 2. Lancer en arrière-plan
+
+    # 3. Répondre IMMÉDIATEMENT au front-end (Zéro délai, zéro erreur CORS !)
     return {
-        "message":  f"{resultat['envoyes']} relance(s) envoyée(s)",
-        "details":  resultat,
+        "message": "Les relances sont en cours d'envoi en arrière-plan.",
     }
 
 

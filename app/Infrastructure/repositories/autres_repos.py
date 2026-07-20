@@ -169,6 +169,32 @@ class SQLAlchemyQRCodeRepository(IQRCodeRepository):
         modele = (await self._db.execute(stmt)).scalar_one_or_none()
         return qrcode_modele_vers_domaine(modele) if modele else None
 
+    async def trouver_dernier_par_etudiant(
+        self,
+        id_etudiant: str,
+    ) -> Optional[QRCodeDomaine]:
+        """
+        Cherche le dernier QR code d'un étudiant, quel que soit
+        son statut (ACTIF, SUSPENDU, EXPIRÉ).
+
+        Utilisé pour l'affichage administratif du QR code,
+        contrairement à trouver_actif_par_etudiant() qui est
+        utilisé lors du scan (contrôle de solvabilité).
+        """
+        from sqlalchemy import select
+        from app.Infrastructure.database.models import QRCode as QRCodeModele
+
+        res = await self._db.execute(
+            select(QRCodeModele)
+            .where(QRCodeModele.id_etudiant == id_etudiant)
+            .order_by(QRCodeModele.date_generation.desc())
+            .limit(1)
+        )
+        modele = res.scalar_one_or_none()
+        if not modele:
+            return None
+        return qrcode_modele_vers_domaine(modele)
+
     async def lister_par_etudiant(self, id_etudiant: str) -> List[QRCodeDomaine]:
         """
         Retourne tout l'historique des QR codes d'un étudiant.

@@ -30,6 +30,7 @@ from app.Domain.interfaces import (
     IEtudiantRepository,
     IPaiementRepository,
     IQRCodeRepository,
+    ISpecialiteRepository,
 )
 
 # On importe les exceptions du Domaine
@@ -107,12 +108,15 @@ class CreerEtudiantUseCase:
        d. Retourne le DTO de réponse
     """
 
-    def __init__(self, etudiant_repo: IEtudiantRepository):
-        # On reçoit le repository PAR INJECTION DE DÉPENDANCE.
-        # Le use case ne crée jamais lui-même le repository.
-        # FastAPI injectera le vrai SQLAlchemyEtudiantRepository.
-        # Cela permet aussi d'injecter un FakeRepository lors des tests.
-        self._etudiant_repo = etudiant_repo
+    def __init__(
+            self,
+            etudiant_repo: IEtudiantRepository,
+            specialite_repo: ISpecialiteRepository,
+            paiement_repo: IPaiementRepository,
+        ):
+            self._etudiant_repo   = etudiant_repo
+            self._specialite_repo = specialite_repo
+            self._paiement_repo   = paiement_repo
 
     async def executer(self, dto: EtudiantCreerDTO) -> EtudiantReponseDTO:
         """
@@ -166,7 +170,36 @@ class CreerEtudiantUseCase:
         # ── Étape 3 : Sauvegarder en base ───────────────────
         etudiant_sauvegarde = await self._etudiant_repo.sauvegarder(etudiant)
 
-        # ── Étape 4 : Retourner le DTO de réponse ───────────
+        # ── Étape 4 : Générer automatiquement les 3 tranches ─
+        # basées sur les montants définis dans la Specialite
+        # ── Étape 4 : Générer automatiquement les 3 tranches ─
+        # ── Étape 4 : Générer automatiquement les 3 tranches ─
+        specialite = await self._specialite_repo.trouver_par_id(dto.id_specialite)
+        if specialite:
+            from app.Domain.entities import PaiementDomaine
+            from app.Domain.value_objects import Montant, StatutPaiement
+            import uuid
+
+            tranches = [
+                (1, specialite.tranche_1, specialite.date_limite_t1),
+                (2, specialite.tranche_2, specialite.date_limite_t2),
+                (3, specialite.tranche_3, specialite.date_limite_t3),
+            ]
+            for numero, montant, date_limite in tranches:
+                paiement = PaiementDomaine(
+                    id_paiement     = f"PAY-{uuid.uuid4().hex[:8].upper()}",
+                    id_etudiant     = dto.id_etudiant,
+                    id_specialite   = dto.id_specialite,
+                    niveau          = dto.niveau,
+                    numero_tranche  = numero,
+                    montant_attendu = montant,              # ← déjà un Montant, pas de conversion
+                    montant_paye    = Montant(valeur=0),
+                    date_limite     = date_limite,
+                    statut          = StatutPaiement.EN_ATTENTE,
+                )
+                await self._paiement_repo.sauvegarder(paiement)
+
+        # ── Étape 5 : Retourner le DTO de réponse ───────────
         return _domaine_vers_reponse(etudiant_sauvegarde)
 
 

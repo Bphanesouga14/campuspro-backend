@@ -24,10 +24,11 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
-    SMTP_HOST: str = ""
+    SMTP_HOST: str
     SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
+    SMTP_USER: str
+    SMTP_PASSWORD: str
+    SMTP_FROM: str = "" # Optionnel si tu l'utilises
     
     SMS_API_KEY: str = ""
     SMS_USERNAME: str = ""

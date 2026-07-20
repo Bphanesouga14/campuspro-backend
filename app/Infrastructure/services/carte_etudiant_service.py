@@ -111,7 +111,7 @@ def _dessiner_recto(c, ox, oy, nom, prenom, matricule,
         f"Valide pour l'année académique {annee}")
 
 
-def _dessiner_verso(c, ox, oy, id_etudiant, nom, prenom,
+def _dessiner_verso(c, ox, oy, id_etudiant, nom, prenom, id_qrcode,     # ← nouveau paramètre
                     matricule, specialite, niveau, annee):
     """Dessine le verso de la carte à la position (ox, oy)."""
 
@@ -135,12 +135,10 @@ def _dessiner_verso(c, ox, oy, id_etudiant, nom, prenom,
         from reportlab.graphics import renderPDF
         from reportlab.graphics.shapes import Drawing as RLDrawing
 
+        # APRÈS — clés exactes attendues par Flutter
         qr_data = json.dumps({
-            "id":  id_etudiant,
-            "mat": matricule,
-            "nom": f"{prenom} {nom}",
-            "sp":  specialite,
-            "niv": niveau,
+            "id_qrcode":   id_qrcode,    # ← clé lue par Flutter
+            "id_etudiant": id_etudiant,  # ← clé lue par Flutter
         }, ensure_ascii=False)
 
         qr_widget = QrCodeWidget(qr_data)
@@ -177,9 +175,9 @@ def _dessiner_verso(c, ox, oy, id_etudiant, nom, prenom,
 
 
 def generer_carte_etudiant_pdf(
-    id_etudiant, nom, prenom, matricule,
+    id_etudiant, nom, prenom, matricule, id_qrcode,     # ← nouveau paramètre
     specialite, niveau, annee,
-    photo_data=None, nom_ecole="CampusPro",
+    photo_data=None, nom_ecole="CampusPro", 
 ) -> bytes:
     """Génère la carte étudiant PDF recto/verso."""
 
@@ -214,9 +212,9 @@ def generer_carte_etudiant_pdf(
     verso_x  = margin + CARD_W + gap
 
     # Dessiner les deux faces
-    _dessiner_recto(c, recto_x, start_y, nom, prenom, matricule,
+    _dessiner_recto(c, recto_x, start_y, nom, prenom, matricule, 
                     specialite, niveau, annee, photo_reader)
-    _dessiner_verso(c, verso_x, start_y, id_etudiant, nom, prenom,
+    _dessiner_verso(c, verso_x, start_y, id_etudiant, nom, prenom, id_qrcode,  # ← nouveau paramètre
                     matricule, specialite, niveau, annee)
 
     # Légendes sous les cartes

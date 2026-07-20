@@ -21,7 +21,11 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+
 from fastapi.middleware.cors import CORSMiddleware
+
+
 
 # Configuration de l'application
 
@@ -46,6 +50,7 @@ from app.Presentation.routes.notification_routes import router as notification_r
 from app.Presentation.routes.profil_routes import router as profil_router
 from app.Presentation.routes.etudiant_photo_routes import router as photo_router
 from app.Presentation.routes.presence_routes import router as presence_router
+from app.Presentation.routes.qrcode_routes import router as qrcode_router
 
 
 from app.Presentation.routes.auth_2fa_routes import router as auth_2fa_router
@@ -161,10 +166,14 @@ app.add_middleware(
     # En développement : on autorise toutes les origines pour éviter
     # les problèmes CORS. En production, remplacer "*" par la liste
     # des domaines autorisés.
-    allow_origins     = ["*"],
-    allow_credentials = False,   # False obligatoire avec allow_origins="*"
-    allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers     = ["*"],
+ 
+ 
+ # ── CONFIGURATION CORS (OBLIGATOIRE POUR LE FRONT-END) ──
+
+    allow_origins=settings.ALLOWED_ORIGINS,  # Autorise les URLs définies dans config.py
+    allow_credentials=True,
+    allow_methods=["*"],                     # Autorise toutes les méthodes (GET, POST, PUT, DELETE...)
+    allow_headers=["*"],                     # Autorise tous les headers (Authorization, Content-Type...)
 )
 
 
@@ -196,6 +205,7 @@ app.include_router(notification_router, prefix="/api/v1")
 app.include_router(profil_router,       prefix="/api/v1")
 app.include_router(photo_router,        prefix="/api/v1")
 app.include_router(presence_router,     prefix="/api/v1")
+app.include_router(qrcode_router,       prefix="/api/v1")
 
 
 
