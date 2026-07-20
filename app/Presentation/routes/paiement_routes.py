@@ -46,6 +46,7 @@ from app.Presentation.dependencies import (
     get_lister_retards_uc,
     get_obtenir_qr_uc,
     get_etudiant_repo,
+    get_qr_repo,
 )
 from app.Infrastructure.database.session import get_db
 from app.Presentation.security import get_current_user, require_roles
@@ -237,77 +238,63 @@ async def paiements_en_retard(
 @router.get(
     "/etudiants/{id_etudiant}/qr-code",
     response_model=QRCodeReponseDTO,
-    summary="QR code actif d'un étudiant",
-    description="""
-Retourne le QR code actif de l'étudiant.
-
-Le champ `qr_data` contient l'image en base64.
-Pour l'afficher dans une page web :
-```html
-<img src="data:image/png;base64,{qr_data}" />
-```
-
-**Erreur 404** si aucun QR code actif n'existe
-(étudiant pas encore à jour de paiement).
-    """,
+    summary="QR code d'un étudiant (dernier, quel que soit le statut)",
 )
 async def obtenir_qr_code(
     id_etudiant: str,
-    use_case: ObtenirQRCodeEtudiantUseCase = Depends(get_obtenir_qr_uc),
+    qr_repo = Depends(get_qr_repo),           # ← nouveau, voir étape 4
+    etudiant_repo = Depends(get_etudiant_repo),
     _utilisateur: UtilisateurDomaine = Depends(get_current_user),
 ):
-    try:
-        return await use_case.executer(id_etudiant)
+    etudiant = await etudiant_repo.trouver_par_id(id_etudiant)
+    if not etudiant:
+        raise HTTPException(status_code=404, detail=f"Étudiant '{id_etudiant}' introuvable.")
 
-    except EtudiantIntrouvableError as e:
-        raise HTTPException(
-            status_code = status.HTTP_404_NOT_FOUND,
-            detail      = str(e),
-        )
-    except QRCodeIntrouvableError as e:
-        raise HTTPException(
-            status_code = status.HTTP_404_NOT_FOUND,
-            detail      = str(e),
-        )
+    qr = await qr_repo.trouver_dernier_par_etudiant(id_etudiant)
+    if not qr:
+        raise HTTPException(status_code=404, detail=f"Aucun QR code pour l'étudiant '{id_etudiant}'.")
+
+    return QRCodeReponseDTO(
+        id_qrcode       = qr.id_qrcode,
+        id_etudiant     = qr.id_etudiant,
+        id_specialite   = qr.id_specialite,
+        niveau          = qr.niveau,
+        date_generation = qr.date_generation,
+        valide_jusqua   = qr.valide_jusqua,
+        statut          = qr.statut.value,
+        est_valide      = qr.est_valide,
+        qr_data         = qr.qr_data,
+    )
 
 
 # ============================================================
 #  ROUTE 4 : Image PNG du QR code (binaire direct)
 #  GET /api/v1/etudiants/{id_etudiant}/qr-code/image
 # ============================================================
-@router.get(
-    "/etudiants/{id_etudiant}/qr-code/image",
-    summary="Image PNG du QR code actif d'un étudiant",
-    description="""
-Retourne directement l'image PNG du QR code (binaire), pratique pour
-l'afficher dans une balise `<img src="/api/v1/etudiants/ETU-001/qr-code/image">`
-sans devoir décoder le base64 côté front-end.
-
-**Erreur 404** si aucun QR code actif n'existe.
-    """,
-    response_class=Response,
-    responses={200: {"content": {"image/png": {}}}},
-)
+@router.get("/etudiants/{id_etudiant}/qr-code/image")
 async def obtenir_qr_code_image(
     id_etudiant: str,
-    use_case: ObtenirQRCodeEtudiantUseCase = Depends(get_obtenir_qr_uc),
+    qr_repo = Depends(get_qr_repo),
     etudiant_repo = Depends(get_etudiant_repo),
     db = Depends(get_db),
     _utilisateur: UtilisateurDomaine = Depends(get_current_user),
 ):
-    try:
-        qr = await use_case.executer(id_etudiant)
-    except EtudiantIntrouvableError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except QRCodeIntrouvableError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-
-    # Récupérer l'étudiant et sa photo
     from app.Infrastructure.database.models import Etudiant as EModele
+
     e_modele = await db.get(EModele, id_etudiant)
+    if not e_modele:
+        raise HTTPException(status_code=404, detail="Étudiant introuvable.")
+
     etudiant = await etudiant_repo.trouver_par_id(id_etudiant)
 
-    # Construire le contenu du QR
+    qr = await qr_repo.trouver_dernier_par_etudiant(id_etudiant)
+    if not qr:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Aucun QR code pour l'étudiant '{id_etudiant}'."
+        )
+
+    # Construire le contenu du QR (reste du code inchangé)
     contenu = qr.qr_data
     if not contenu:
         import json as _json
@@ -316,12 +303,12 @@ async def obtenir_qr_code_image(
             "id_etudiant": id_etudiant,
             "specialite":  qr.id_specialite,
             "niveau":      qr.niveau,
-            "valide":      qr.valide_jusqua,
         }
         if etudiant:
             infos["matricule"] = str(etudiant.matricule.valeur) if hasattr(etudiant.matricule, "valeur") else str(etudiant.matricule)
             infos["nom"]       = f"{etudiant.nom} {etudiant.prenom}"
         contenu = _json.dumps(infos, ensure_ascii=False)
+
 
     # Générer l'image QR avec photo intégrée si disponible
     photo_data = e_modele.photo if e_modele else None
@@ -346,9 +333,12 @@ def _generer_qr_avec_photo(contenu: str, id_etudiant: str, photo_data: str | Non
         return _qr_data_vers_png(contenu, id_etudiant)
 
     # 1. Générer le QR code de base
+
     niveau_correction = qrcode.constants.ERROR_CORRECT_H if photo_data else qrcode.constants.ERROR_CORRECT_M
+
+    # APRÈS — version=None laisse la bibliothèque calculer automatiquement
     qr = qrcode.QRCode(
-        version          = 1,
+        version          = None,
         error_correction = niveau_correction,
         box_size         = 10,
         border           = 4,
@@ -420,7 +410,7 @@ def _generer_qr_avec_photo(contenu: str, id_etudiant: str, photo_data: str | Non
     return buf.getvalue()
 
 
-def _qr_data_vers_png(qr_data: str, id_etudiant: str) -> bytes:
+def _qr_data_vers_png(qr_data: str, id_etudiant: str, photo_data: bool = False) -> bytes:
     """
     Convertit le champ qr_data en image PNG (bytes).
 
@@ -452,14 +442,17 @@ def _qr_data_vers_png(qr_data: str, id_etudiant: str) -> bytes:
     try:
         import qrcode
         import io as _io
+        # Dynamisation du niveau de correction selon la présence d'une photo
+        niveau_correction = qrcode.constants.ERROR_CORRECT_H if photo_data else qrcode.constants.ERROR_CORRECT_M
 
+        # APRÈS — version=None laisse la bibliothèque calculer automatiquement
         qr = qrcode.QRCode(
-            version          = 1,
-            error_correction = qrcode.constants.ERROR_CORRECT_H,
+            version          = None,
+            error_correction = niveau_correction,
             box_size         = 10,
             border           = 4,
         )
-        qr.add_data(qr_data)        # On encode le texte tel quel
+        qr.add_data(qr_data)
         qr.make(fit=True)
         image  = qr.make_image(fill_color="black", back_color="white")
         buffer = _io.BytesIO()
@@ -478,49 +471,49 @@ def _qr_data_vers_png(qr_data: str, id_etudiant: str) -> bytes:
     
 
 
-@router.get(
-    "/etudiants/{id_etudiant}/carte",
-    summary="Générer la carte étudiant PDF",
-)
+@router.get("/etudiants/{id_etudiant}/carte")
 async def telecharger_carte_etudiant(
     id_etudiant: str,
     db = Depends(get_db),
     _: UtilisateurDomaine = Depends(get_current_user),
 ):
-    """
-    Génère et télécharge la carte étudiant PDF.
-    Contient : photo, nom, matricule, spécialité,
-    niveau, QR code recto/verso.
-    """
-    from app.Infrastructure.database.models import Etudiant as EModele
-    from app.Infrastructure.services.carte_etudiant_service import (
-        generer_carte_etudiant_pdf
-    )
+    from app.Infrastructure.database.models import Etudiant as EModele, QRCode
+    from app.Infrastructure.services.carte_etudiant_service import generer_carte_etudiant_pdf
+    from sqlalchemy import select
 
     e = await db.get(EModele, id_etudiant)
     if not e:
         raise HTTPException(status_code=404, detail="Étudiant introuvable.")
 
+    # Récupérer le QR code actif de l'étudiant
+    res_qr = await db.execute(
+        select(QRCode)
+        .where(QRCode.id_etudiant == id_etudiant)
+        .order_by(QRCode.date_generation.desc())
+        .limit(1)
+    )
+    qr = res_qr.scalar_one_or_none()
+    id_qrcode = qr.id_qrcode if qr else f"QR-{id_etudiant}"
+
     try:
         pdf_bytes = generer_carte_etudiant_pdf(
             id_etudiant = e.id_etudiant,
+            id_qrcode   = id_qrcode,      # ← nouveau paramètre
             nom         = e.nom,
             prenom      = e.prenom,
             matricule   = str(e.matricule),
             specialite  = str(e.code_specialite),
-            niveau      = int(e.niveau),
+            niveau      = int(e.niveau.value) if hasattr(e.niveau, "value") else int(e.niveau),
             annee       = str(e.annee_academique),
             photo_data  = getattr(e, "photo", None),
         )
     except Exception as ex:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur génération carte : {str(ex)}"
-        )
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erreur génération carte : {str(ex)}")
 
-    nom_fichier = f"Carte_{e.matricule}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={nom_fichier}"}
+        headers={"Content-Disposition": f"attachment; filename=Carte_{e.matricule}.pdf"}
     )
