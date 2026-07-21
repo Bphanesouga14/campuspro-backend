@@ -29,6 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Configuration de l'application
 
+from app.Infrastructure.database.models import Utilisateur
 from app.core.config import settings
 
 # Création des tables au démarrage
@@ -233,8 +234,28 @@ async def health_check():
     }
 
 
-# Exemple conceptuel :
-# Au démarrage de l'app, vérifie s'il y a un admin, sinon crée-le
-def create_default_admin():
-    # Vérifie si la base est vide et insère un compte admin avec un mot de passe hashé
-    pass
+from passlib.context import CryptContext
+# (Assure-toi d'importer ta session de base de données, ton modèle Utilisateur, etc.)
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def create_default_admin(db_session):
+    # 1. Vérifie s'il existe déjà un utilisateur administrateur
+    admin_exists = db_session.query(Utilisateur).filter_by(role="admin").first()
+    
+    if not admin_exists:
+        # 2. Si aucun admin n'existe, on le crée
+        hashed_password = pwd_context.hash("012345678")  # Mot de passe par défaut (à changer après la première connexion)
+        
+        nouveau_admin = Utilisateur(
+            email="bphanesouga@gmail.com",
+            mot_de_passe=hashed_password,
+            role="admin",
+            nom="Administrateur"
+        )
+        
+        db_session.add(nouveau_admin)
+        db_session.commit()
+        print("Compte administrateur par défaut créé avec succès !")
+    else:
+        print("Un administrateur existe déjà.")
