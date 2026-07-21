@@ -231,3 +231,10 @@ async def health_check():
         "statut":      "ok",
         "base_active": db_session.source_active,
     }
+
+
+# Exemple conceptuel :
+# Au démarrage de l'app, vérifie s'il y a un admin, sinon crée-le
+def create_default_admin():
+    # Vérifie si la base est vide et insère un compte admin avec un mot de passe hashé
+    pass
