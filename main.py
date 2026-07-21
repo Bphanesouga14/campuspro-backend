@@ -155,6 +155,15 @@ Ce projet suit la **Clean Architecture** avec 4 couches :
 )
 
 
+# Liste des origines autorisées à parler à ton API
+origins = [
+    "https://campuspro-front.bphanesouga.workers.dev",
+    "http://localhost:5173", # Si tu testes aussi en local avec Vite
+    "http://127.0.0.1:5173"
+]
+
+
+
 # ============================================================
 #  MIDDLEWARE CORS
 # ============================================================
@@ -259,3 +268,8 @@ def create_default_admin(db_session):
         print("Compte administrateur par défaut créé avec succès !")
     else:
         print("Un administrateur existe déjà.")
+
+
+
+
+
