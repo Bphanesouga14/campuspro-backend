@@ -37,7 +37,7 @@ source_active:     str                          = "non initialisée"
 #  Création des moteurs
 # ────────────────────────────────────────────────────────────
 
-def _moteur_supabase() -> AsyncEngine:
+'''def _moteur_supabase() -> AsyncEngine:
     return create_async_engine(
         settings.DATABASE_URL,
         echo          = settings.DEBUG,
@@ -45,7 +45,27 @@ def _moteur_supabase() -> AsyncEngine:
         pool_size     = 5,
         max_overflow  = 10,
         connect_args  = {"ssl": "require"},
+    )'''
+def _moteur_supabase() -> AsyncEngine:
+    url = settings.DATABASE_URL
+    # Sécurité supplémentaire : s'assure que le préfixe utilise bien asyncpg
+    if url and url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url and url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    return create_async_engine(
+        url,
+        echo          = settings.DEBUG,
+        pool_pre_ping = True,
+        pool_size     = 5,
+        max_overflow  = 10,
+        # On retire connect_args={"ssl": "require"} car le pooler Supavisor gère la connexion standard ou l'inclut dans l'URL
     )
+
+
+
+
 
 
 def _moteur_local(url: Optional[str] = None) -> AsyncEngine:
