@@ -242,34 +242,3 @@ async def health_check():
         "base_active": db_session.source_active,
     }
 
-
-from passlib.context import CryptContext
-# (Assure-toi d'importer ta session de base de données, ton modèle Utilisateur, etc.)
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def create_default_admin(db_session):
-    # 1. Vérifie s'il existe déjà un utilisateur administrateur
-    admin_exists = db_session.query(Utilisateur).filter_by(role="admin").first()
-    
-    if not admin_exists:
-        # 2. Si aucun admin n'existe, on le crée
-        hashed_password = pwd_context.hash("012345678")  # Mot de passe par défaut (à changer après la première connexion)
-        
-        nouveau_admin = Utilisateur(
-            email="bphanesouga@gmail.com",
-            mot_de_passe=hashed_password,
-            role="admin",
-            nom="Administrateur"
-        )
-        
-        db_session.add(nouveau_admin)
-        db_session.commit()
-        print("Compte administrateur par défaut créé avec succès !")
-    else:
-        print("Un administrateur existe déjà.")
-
-
-
-
-
