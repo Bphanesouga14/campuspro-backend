@@ -180,7 +180,10 @@ app.add_middleware(
  
  # ── CONFIGURATION CORS (OBLIGATOIRE POUR LE FRONT-END) ──
 
-    allow_origins=settings.ALLOWED_ORIGINS,  # Autorise les URLs définies dans config.py
+    #allow_origins=settings.ALLOWED_ORIGINS,  # Autorise les URLs définies dans config.py
+    
+    #modifié pour autoriser toutes les origines en développement
+    allow_origins=["*"],  # En gros : autorise tout le monde
     allow_credentials=True,
     allow_methods=["*"],                     # Autorise toutes les méthodes (GET, POST, PUT, DELETE...)
     allow_headers=["*"],                     # Autorise tous les headers (Authorization, Content-Type...)
